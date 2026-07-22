@@ -5,7 +5,7 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
-artifacts/
-data/
+/artifacts/
+/data/
 *.png
 .tmp/
