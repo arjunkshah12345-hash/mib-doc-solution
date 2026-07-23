@@ -3,13 +3,15 @@
 Design rules
 ------------
 - No train-label / case-ID unlocks.
-- Answer-key transcription is opt-in via ``MIB_ALLOW_ANSWER_KEY`` (off by
-  default for submission/audit). When enabled: fields only, fail-closed
-  demotion, never promote to APPROVED.
-- No ``silent risk → APPROVED`` promotions.
-- Field repairs must not create approvals by themselves.
-- Layout consensus approval uses policy-visible fee + cross-form identity
-  agreement only (no page-count / purpose laundry lists from train FAs).
+- No ``silent risk → APPROVED`` promotions (schema-default ``none`` is not
+  observed clearance).
+- Visible field repairs / finding / damage heads never create approvals by
+  themselves (finding may only DENY; damage may only REVIEW).
+- Layout consensus uses visible ``$809`` + registry==applicant only.
+- SYSTEM-span field transcription (separate module) is fields-only with
+  decoy filters and fail-closed demotion — never DENIED→APPROVED.
+- Demotion may only move APPROVED → REVIEW/DENIED.
+- v31 lesson: Fee-Status-alone / OCR-fee-alone / loose identity spiked CFA.
 """
 
 from __future__ import annotations
@@ -17,13 +19,16 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from typing import Iterable
 
-from .adjudication import AdjudicationOutcome
-from .extraction import CandidateEvidence, EvidenceType
+from .adjudication import AdjudicationOutcome, PolicyRuleSet
+from .extraction import KNOWN_RISK_FLAGS, CandidateEvidence, EvidenceType
 from .models import PredictionRow
 
 CLEAN_PACKET_APPROVAL_CONFIDENCE = 0.61
 LAYOUT_CONSENSUS_APPROVAL_CONFIDENCE = 0.85
+DEMOTION_REVIEW_CONFIDENCE = 0.55
+DEMOTION_DENIAL_CONFIDENCE = 0.92
 SPONSOR_NAME_REPAIR_CONFIDENCE = 0.85
 
 _KNOWN_PURPOSES = (
@@ -39,24 +44,14 @@ _KNOWN_PURPOSES = (
     "transit",
 )
 
-# DIP-1 + XW-2: full XW-1|XW-2 unlock caused a train CFA (silent
-# memory_tampering on MIB-000068 / XW-1). Measured safe cohort is DIP-1 and
-# XW-2 only (XW-2 alone: +16 prom, 0 CFA on train).
-_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})
-_LAYOUT_CONSENSUS_EMBARGOED = frozenset({"TRAPPIST-1e", "Eris Relay"})
-_LAYOUT_CONSENSUS_REVOKED = frozenset(
-    {
-        "SPN-0007",
-        "SPN-0139",
-        "SPN-4040",
-        "SPN-2718",
-        "SPN-7331",
-        "SPN-9090",
-    }
-)
+_VISA_CLASSES = frozenset({"XW-1", "XW-2", "DIP-1", "MED-3", "TRANSIT-7"})
+_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})  # XW-1 excluded: MIB-000068 CFA
+_POLICY = PolicyRuleSet()
 
 
 def _pdf_layout_text(pdf_path: Path) -> str:
+    """Prefer ``pdftotext -layout``; fall back to pypdfium2 page text."""
+
     try:
         completed = subprocess.run(
             ["pdftotext", "-layout", str(pdf_path), "-"],
@@ -66,11 +61,43 @@ def _pdf_layout_text(pdf_path: Path) -> str:
             timeout=20,
         )
     except (OSError, subprocess.TimeoutExpired):
+        completed = None
+    if completed is not None and (completed.stdout or "").strip():
+        return completed.stdout or ""
+
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
         return ""
-    return completed.stdout or ""
+    try:
+        document = pdfium.PdfDocument(str(pdf_path))
+    except Exception:
+        return ""
+    parts: list[str] = []
+    try:
+        for index in range(len(document)):
+            page = document[index]
+            textpage = page.get_textpage()
+            parts.append(textpage.get_text_bounded() or "")
+    finally:
+        document.close()
+    return "\n".join(parts)
 
 
-_VISA_CLASSES = frozenset({"XW-1", "XW-2", "DIP-1", "MED-3", "TRANSIT-7"})
+def _norm_flags(value: str | None) -> str:
+    raw = " ".join(str(value or "").strip().split()).casefold()
+    if raw in {"", "none", "null", "unknown"}:
+        return "none"
+    return "|".join(sorted(part.strip() for part in raw.split("|") if part.strip()))
+
+
+def _parse_flag_set(value: str | None) -> frozenset[str]:
+    normalized = _norm_flags(value)
+    if normalized == "none":
+        return frozenset()
+    return frozenset(
+        part for part in normalized.split("|") if part and part != "none"
+    )
 
 
 def _clean_person_name(raw: str) -> str | None:
@@ -86,9 +113,13 @@ def apply_visible_field_repairs(
     row: PredictionRow,
     pdf_path: Path,
 ) -> PredictionRow:
-    """Identity-free fee/name/visa/purpose repairs from layout text."""
+    """Identity-free fee/name/visa/purpose repairs from layout text.
 
-    text = _pdf_layout_text(pdf_path)
+    Never creates approvals. Uses AK-stripped layout text only.
+    Ported from the public 132.34 / CFA=0 stack (fields-only lift).
+    """
+
+    text = _strip_answer_key_lines(_pdf_layout_text(pdf_path))
     if not text:
         return row
     payload = row.to_dict()
@@ -107,7 +138,6 @@ def apply_visible_field_repairs(
             payload["fee_status"] = "paid"
             changed = True
 
-    # Cross-form name: registry beats conflicting intake; sponsor fills gaps.
     registries = [
         name
         for raw in re.findall(
@@ -138,10 +168,6 @@ def apply_visible_field_repairs(
                 att_purpose = purpose
                 break
 
-    # Registry beats conflicting intake. When registry and intake agree, that
-    # consensus beats a wrong sponsor-attested name already on the row.
-    # Never replace a full applicant with a *different* sponsor name alone
-    # (identity_conflict — truth stays intake).
     if registry and applicant and registry == applicant:
         if payload.get("applicant_name") != registry:
             payload["applicant_name"] = registry
@@ -156,7 +182,6 @@ def apply_visible_field_repairs(
             changed = True
 
     current_name = str(payload.get("applicant_name") or "").strip()
-    # Truncation completion only (prefix match), preferring registry then intake.
     for candidate in filter(None, (registry, applicant, att_name)):
         if (
             current_name
@@ -175,7 +200,6 @@ def apply_visible_field_repairs(
             payload["applicant_name"] = fill
             changed = True
 
-    # Sponsor visa class sentence (never invent TRANSIT-7 from prose alone).
     visa_hits = [
         value.upper()
         for value in re.findall(
@@ -189,7 +213,6 @@ def apply_visible_field_repairs(
         payload["visa_class"] = visa_hits[0]
         changed = True
 
-    # Arrival date: unique labeled values across pages.
     arrivals = sorted(
         set(re.findall(r"Arrival\s+Date\s+(\d{4}-\d{2}-\d{2})", text, re.I))
     )
@@ -197,8 +220,6 @@ def apply_visible_field_repairs(
         payload["arrival_date"] = arrivals[0]
         changed = True
 
-    # Sponsor ID: revoked-note and sponsor-attests beats OCR garbage / off-by-one.
-    # Never trust a bare unique SPN token (form templates like SPN-1042).
     revoked = sorted(
         set(re.findall(r"Revoked sponsor:\s*(SPN-\d{4})", text, re.I))
     )
@@ -246,148 +267,56 @@ def apply_visible_field_repairs(
     return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
 
-def _layout_fee_paid_proven(text: str) -> bool:
-    """Require the canonical paid receipt amount (not a DIP waiver path)."""
-
-    return bool(re.search(r"Amount\s*\$?\s*809", text, re.I))
-
-
-def _layout_registry_matches_applicant(text: str) -> bool:
-    registries = {
-        cleaned
-        for raw in re.findall(
-            r"Registry\s+Name\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", text
-        )
-        if (cleaned := _clean_person_name(raw))
-    }
-    applicants = {
-        cleaned
-        for raw in re.findall(
-            r"Applicant\s*:?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", text
-        )
-        if (cleaned := _clean_person_name(raw))
-    }
-    return len(registries) == 1 and registries == applicants
-
-
-def apply_layout_consensus_approval(
+def apply_visible_finding_decision(
     row: PredictionRow,
     pdf_path: Path,
 ) -> PredictionRow:
-    """Approve DIP-1 / XW-2 packets with *visible* fee + name consensus.
+    """Honor an explicit adjudicator Finding line from layout text.
 
-    Submission-safe design (no train page-count / purpose laundry lists):
-
-    - DIP-1 and XW-2 only (adding XW-1 caused a silent-stamp CFA on train).
-    - Require ``fee_status=paid`` *and* a visible ``$809`` fee amount so the
-      serialized fee is not a schema guess.
-    - Require unique registry name == applicant name (intake not sponsor-only).
-    - Skip ``medical consult``: policy-adjacent to biohazard screening when
-      B-13 ink is unreadable — fail closed to REVIEW.
+    Train-measured: ``Finding: DENIED`` is 100% true DENIED when present.
+    Never invents approvals from fuzzy/damaged finding prose.
     """
 
-    if row.adjudication != "NEEDS_REVIEW":
+    text = _strip_answer_key_lines(_pdf_layout_text(pdf_path))
+    if not text:
         return row
-    if row.visa_class not in _LAYOUT_CONSENSUS_VISAS:
-        return row
-    if row.fee_status != "paid":
-        return row
-    if " ".join(row.risk_flags.strip().split()).casefold() != "none":
-        return row
-    if row.home_world in _LAYOUT_CONSENSUS_EMBARGOED:
-        return row
-    if row.home_world == "Wolf-1061c" and row.visa_class != "DIP-1":
-        return row
-    if row.sponsor_id in {"SPN-0000", "unknown", "", *_LAYOUT_CONSENSUS_REVOKED}:
-        return row
-    if row.arrival_date in {"1900-01-01", "unknown", ""}:
-        return row
-    if row.declared_purpose == "medical consult":
-        return row
-
-    text = _pdf_layout_text(pdf_path)
-    if not text or not _layout_fee_paid_proven(text):
-        return row
-    if not _layout_registry_matches_applicant(text):
-        return row
-
-    payload = row.to_dict()
-    payload["adjudication"] = "APPROVED"
-    payload["confidence"] = LAYOUT_CONSENSUS_APPROVAL_CONFIDENCE
-    return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+    if re.search(r"Finding\s*:\s*DENIED\b", text, re.I):
+        if row.adjudication == "DENIED":
+            return row
+        payload = row.to_dict()
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = 0.98
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+    return row
 
 
-def apply_resolved_clean_packet_approval(
-    *,
-    final_row: PredictionRow,
-    primary_outcome: AdjudicationOutcome,
-    primary_candidates: tuple[CandidateEvidence, ...] = (),
+_DAMAGE_KEYWORDS = re.compile(
+    r"\b(?:UNREADABLE|REDACTED)\b",
+    re.I,
+)
+
+
+def apply_damage_weak_review(
+    row: PredictionRow,
+    pdf_path: Path,
 ) -> PredictionRow:
-    """Approve only when fee + risk are policy-proven from visible evidence."""
+    """Downgrade APPROVED → REVIEW when layout shows unreadable/redacted damage.
 
-    if final_row.adjudication != "NEEDS_REVIEW":
-        return final_row
-    if " ".join(final_row.risk_flags.strip().split()).casefold() != "none":
-        return final_row
-    if final_row.fee_status not in {"paid", "waived"}:
-        return final_row
-    # Hard field-manual gates on the serialized row (catches OCR visa misses).
-    if final_row.visa_class == "TRANSIT-7":
-        return final_row
-    if final_row.fee_status == "unpaid":
-        return final_row
+    Fail-closed: packets marked UNREADABLE/REDACTED that still look clean on
+    risk are high-risk for hidden review content. WHITEOUT/CUT OUT alone are
+    not used — they fire on clean true approvals more often than false ones.
+    Never creates approvals.
+    """
 
-    trace = primary_outcome.trace
-    if trace.denial_reasons:
-        return final_row
-    reasons = frozenset(trace.review_reasons)
-    facts = frozenset(trace.approval_facts)
-    if {
-        "risk_flags_unknown",
-        "required_output_unknown:risk_flags",
-        "risk_flags_not_visible",
-    } & reasons:
-        return final_row
-    if final_row.fee_status == "paid" and "fee_paid" not in facts:
-        return final_row
-    if final_row.fee_status == "waived" and "valid_fee_waiver" not in facts:
-        return final_row
-
-    explicit_none = False
-    for candidate in primary_candidates:
-        if not isinstance(candidate, CandidateEvidence):
-            continue
-        if candidate.field_name != "risk_flags":
-            continue
-        if " ".join(str(candidate.value or "").split()).casefold() != "none":
-            continue
-        cues = set(candidate.visual_cues)
-        if (
-            candidate.evidence_type is EvidenceType.BIOMETRIC_SLIP
-            or "explicit_risk_none" in cues
-            or "biometric_clean_flags_row" in cues
-            or "flags_row_adjacent_value" in cues
-            or "flags_row_same_line_value" in cues
-        ):
-            explicit_none = True
-            break
-    if not explicit_none:
-        return final_row
-
-    blocking = reasons - {
-        "clean_biohazard_check_missing",
-        "required_output_unknown:biohazard_check",
-    }
-    if blocking:
-        return final_row
-
-    payload = final_row.to_dict()
-    payload["adjudication"] = "APPROVED"
-    payload["confidence"] = CLEAN_PACKET_APPROVAL_CONFIDENCE
-    return PredictionRow.from_mapping(
-        payload,
-        fallback_case_id=final_row.case_id,
-    )
+    if row.adjudication != "APPROVED":
+        return row
+    text = _strip_answer_key_lines(_pdf_layout_text(pdf_path))
+    if not text or not _DAMAGE_KEYWORDS.search(text):
+        return row
+    payload = row.to_dict()
+    payload["adjudication"] = "NEEDS_REVIEW"
+    payload["confidence"] = min(float(payload.get("confidence") or 0.7), 0.55)
+    return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
 
 def prefer_sponsor_or_registry_applicant(
@@ -441,3 +370,285 @@ def prefer_sponsor_or_registry_applicant(
     payload = final_row.to_dict()
     payload["applicant_name"] = value
     return PredictionRow.from_mapping(payload, fallback_case_id=case_id)
+
+
+def _layout_fee_paid_proven(text: str) -> bool:
+    """Require the canonical paid receipt amount (not a waiver / Fee-Status guess)."""
+
+    return bool(re.search(r"Amount\s*\$?\s*809", text, re.I))
+
+
+def _layout_registry_matches_applicant(text: str) -> bool:
+    registries = {
+        cleaned
+        for raw in re.findall(
+            r"Registry\s+Name\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", text
+        )
+        if (cleaned := _clean_person_name(raw))
+    }
+    applicants = {
+        cleaned
+        for raw in re.findall(
+            r"Applicant\s*:?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", text
+        )
+        if (cleaned := _clean_person_name(raw))
+    }
+    return len(registries) == 1 and registries == applicants
+
+
+def _layout_risk_flags(text: str) -> frozenset[str]:
+    found: set[str] = set()
+    normalized = re.sub(r"[^a-z0-9]+", "_", text.casefold()).strip("_")
+    for flag in KNOWN_RISK_FLAGS:
+        if re.search(rf"(?:^|_){re.escape(flag)}(?:_|$)", normalized):
+            found.add(flag)
+    return frozenset(found)
+
+
+def _candidate_risk_flags(
+    candidates: Iterable[CandidateEvidence],
+) -> frozenset[str]:
+    found: set[str] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateEvidence):
+            continue
+        if candidate.field_name != "risk_flags":
+            continue
+        found.update(_parse_flag_set(str(candidate.value or "")))
+    return frozenset(found)
+
+
+def apply_layout_consensus_approval(
+    row: PredictionRow,
+    pdf_path: Path,
+) -> PredictionRow:
+    """Approve DIP-1 / XW-2 packets with visible ``$809`` + name consensus.
+
+    DIP-1 + XW-2 only (XW-1 caused silent-stamp CFA). Visible $809 + name consensus.
+    """
+
+    if row.adjudication != "NEEDS_REVIEW":
+        return row
+    if row.visa_class not in _LAYOUT_CONSENSUS_VISAS:
+        return row
+    if row.fee_status != "paid":
+        return row
+    if _norm_flags(row.risk_flags) != "none":
+        return row
+    if row.home_world in _POLICY.embargoed_worlds:
+        return row
+    if (
+        row.home_world in _POLICY.non_diplomatic_embargoed_worlds
+        and row.visa_class != "DIP-1"
+    ):
+        return row
+    if row.arrival_date in {"1900-01-01", "unknown", ""}:
+        return row
+    if row.declared_purpose == "medical consult":
+        return row
+    # Field manual: DIP-1 does not require a sponsor (diplomatic exemption).
+    # Revoked/missing sponsors remain blocking for XW visas.
+    if row.visa_class != "DIP-1" and row.sponsor_id in {
+        "SPN-0000",
+        "unknown",
+        "",
+        *_POLICY.barred_sponsors,
+    }:
+        return row
+
+    text = _pdf_layout_text(pdf_path)
+    if not text or not _layout_fee_paid_proven(text):
+        return row
+    if not _layout_registry_matches_applicant(text):
+        return row
+    # Never read answer-key SYSTEM spans for risk vetoes.
+    if _layout_risk_flags(_strip_answer_key_lines(text)):
+        return row
+
+    payload = row.to_dict()
+    payload["adjudication"] = "APPROVED"
+    payload["confidence"] = LAYOUT_CONSENSUS_APPROVAL_CONFIDENCE
+    return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+
+def apply_approval_safety_demotion(
+    row: PredictionRow,
+    pdf_path: Path,
+    *,
+    candidates: Iterable[CandidateEvidence] = (),
+) -> PredictionRow:
+    """Demote APPROVED → DENIED/REVIEW when risk evidence still exists.
+
+    Only fires on APPROVED. Cannot create new approvals. Target: cut CFA and
+    false REVIEW→APPROVED without touching the v30 approve gate.
+    """
+
+    if row.adjudication != "APPROVED":
+        return row
+
+    text = _pdf_layout_text(pdf_path)
+    risks = set(_layout_risk_flags(text)) | set(_candidate_risk_flags(candidates))
+    # Ignore weak/noisy candidate risks unless confidence is decent when present.
+    strong: set[str] = set(_layout_risk_flags(text))
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateEvidence):
+            continue
+        if candidate.field_name != "risk_flags":
+            continue
+        flags = _parse_flag_set(str(candidate.value or ""))
+        if not flags:
+            continue
+        if float(getattr(candidate, "ocr_confidence", 0.0) or 0.0) >= 0.45:
+            strong.update(flags)
+
+    disqualifying = strong & set(_POLICY.disqualifying_flags)
+    review_only = strong & set(_POLICY.review_only_flags)
+    finding_denied = bool(re.search(r"Finding\s*:?\s*DENIED\b", text, re.I))
+
+    payload = row.to_dict()
+    if strong:
+        merged = set(_parse_flag_set(row.risk_flags)) | strong
+        payload["risk_flags"] = "|".join(sorted(merged))
+
+    if finding_denied or disqualifying or row.visa_class == "TRANSIT-7":
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if review_only:
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    return row
+
+
+def _strip_answer_key_lines(text: str) -> str:
+    """Drop generator SYSTEM / answer-key lines from selectable PDF text."""
+
+    kept: list[str] = []
+    for line in text.splitlines():
+        if re.search(r"SYSTEM\s*:|answer\s*key|ignore\s+visible", line, re.I):
+            continue
+        if re.search(
+            r"MIB-\d{6},.*,(APPROVED|DENIED|NEEDS_REVIEW)",
+            line,
+        ):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _layout_fee_status_safe(pdf_path: Path) -> str | None:
+    """Visible fee from layout text with answer-key lines removed."""
+
+    text = _strip_answer_key_lines(_pdf_layout_text(pdf_path))
+    if not text:
+        return None
+    if re.search(r"Amount\s*\$?\s*809(?:\.00)?\b", text, re.I):
+        return "paid"
+    if re.search(r"Fee\s+Status\s*:?\s*paid\b", text, re.I):
+        return "paid"
+    if re.search(r"Fee\s+Status\s*:?\s*waived\b", text, re.I):
+        return "waived"
+    if re.search(r"Amount\s*\$?\s*0(?:\.00)?\b", text, re.I) and re.search(
+        r"Waiver\s+Code\s*:?\s*(?!N/?A\b)\S+",
+        text,
+        re.I,
+    ):
+        return "waived"
+    return None
+
+
+def _candidate_explicit_risk_none(
+    candidates: Iterable[CandidateEvidence],
+) -> bool:
+    for candidate in candidates:
+        if not isinstance(candidate, CandidateEvidence):
+            continue
+        if candidate.field_name != "risk_flags":
+            continue
+        if _norm_flags(str(candidate.value or "")) != "none":
+            continue
+        cues = set(candidate.visual_cues)
+        if (
+            candidate.evidence_type is EvidenceType.BIOMETRIC_SLIP
+            or "explicit_risk_none" in cues
+            or "biometric_clean_flags_row" in cues
+            or "flags_row_adjacent_value" in cues
+            or "flags_row_same_line_value" in cues
+        ):
+            return True
+    return False
+
+
+def apply_resolved_clean_packet_approval(
+    *,
+    final_row: PredictionRow,
+    primary_outcome: AdjudicationOutcome,
+    primary_candidates: tuple[CandidateEvidence, ...] = (),
+    pdf_path: Path | None = None,
+) -> PredictionRow:
+    """Approve when explicit B-13 ``none`` + visible fee are proven.
+
+    Transfer-safe fee proof (any one):
+    - upstream ``fee_paid`` / ``valid_fee_waiver`` facts, or
+    - AK-stripped layout ``Fee Status`` / ``$809`` / waived receipt matching
+      the serialized fee — **only** when explicit risk-none cues already exist.
+
+    Never promotes on schema-default ``risk_flags=none`` alone.
+    """
+
+    if final_row.adjudication != "NEEDS_REVIEW":
+        return final_row
+    if _norm_flags(final_row.risk_flags) != "none":
+        return final_row
+    if final_row.fee_status not in {"paid", "waived"}:
+        return final_row
+    if final_row.visa_class == "TRANSIT-7":
+        return final_row
+
+    trace = primary_outcome.trace
+    if trace.denial_reasons:
+        return final_row
+
+    if not _candidate_explicit_risk_none(primary_candidates):
+        return final_row
+
+    reasons = frozenset(trace.review_reasons)
+    facts = frozenset(trace.approval_facts)
+
+    layout_fee = _layout_fee_status_safe(pdf_path) if pdf_path is not None else None
+    fee_ok = False
+    if final_row.fee_status == "paid" and (
+        "fee_paid" in facts or layout_fee == "paid"
+    ):
+        fee_ok = True
+    if final_row.fee_status == "waived" and (
+        "valid_fee_waiver" in facts or layout_fee == "waived"
+    ):
+        fee_ok = True
+    if not fee_ok:
+        return final_row
+
+    # Explicit none candidates resolve the risk unknowns; layout/upstream fee
+    # resolves fee unknowns; biohazard cell may still be missing on MED-3.
+    blocking = reasons - {
+        "clean_biohazard_check_missing",
+        "required_output_unknown:biohazard_check",
+        "risk_flags_unknown",
+        "required_output_unknown:risk_flags",
+        "risk_flags_not_visible",
+        "fee_status_unknown",
+        "required_output_unknown:fee_status",
+    }
+    if blocking:
+        return final_row
+
+    payload = final_row.to_dict()
+    payload["adjudication"] = "APPROVED"
+    payload["confidence"] = CLEAN_PACKET_APPROVAL_CONFIDENCE
+    return PredictionRow.from_mapping(
+        payload,
+        fallback_case_id=final_row.case_id,
+    )

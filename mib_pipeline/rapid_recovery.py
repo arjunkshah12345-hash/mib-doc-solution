@@ -21,9 +21,12 @@ from typing import Any, Callable, Iterable, Protocol
 from .adjudication import AdjudicationOutcome, PolicyRuleSet
 from .arjun_answer_key import apply_answer_key_transcription
 from .arjun_heads import (
+    apply_approval_safety_demotion,
+    apply_damage_weak_review,
     apply_layout_consensus_approval,
     apply_resolved_clean_packet_approval,
     apply_visible_field_repairs,
+    apply_visible_finding_decision,
     prefer_sponsor_or_registry_applicant,
 )
 from .arjun_visible_ocr import apply_visible_ocr_repairs
@@ -1249,6 +1252,13 @@ class RapidOutputRecoveryProcessor:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
         # Re-check OCR deny/fee after AK/layout so demotions stick.
         recovered = apply_visible_ocr_repairs(recovered, pdf_path)
+        # v1-ported demotion heads (never invent APPROVED): explicit Finding
+        # DENIED, UNREADABLE/REDACTED weak-review, layout/candidate risk veto.
+        recovered = apply_visible_finding_decision(recovered, pdf_path)
+        recovered = apply_damage_weak_review(recovered, pdf_path)
+        recovered = apply_approval_safety_demotion(
+            recovered, pdf_path, candidates=tuple(primary_candidates)
+        )
         # Hard gate: never leave APPROVED on a transit visa (OCR may miss it
         # until a later field repair; historical DENIED→APPROVED CFA class).
         if (

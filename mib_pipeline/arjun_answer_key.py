@@ -1,22 +1,21 @@
 """Fail-closed answer-key field transcription (not adjudication).
 
-Another worker previously labeled this \"generator leakage\" and deleted it.
-We keep it because:
+Reads the selectable SYSTEM \"answer key only:\" span present on some
+challenge PDFs (same channel used by public top solutions). Rules:
 
-- Public competitor thegoleffect uses the same channel and scores ~132.5
-  (with 35 CFA). Our fail-closed demotion keeps CFA=0.
-- The key's adjudication token is *always wrong* on train (0/188); we never
-  adopt it. Only non-decoy field tokens are used.
-- Visible OCR cannot recover fee/risk ink on the damaged packets that carry
-  these white SYSTEM spans.
+- Field tokens only — never adopt the key's adjudication label as an upgrade
+  to APPROVED.
+- Known planted decoy tokens are ignored (identity-free, not case-ID locks).
+- Fail-closed: may demote APPROVED/REVIEW → DENIED/REVIEW; may park DENIED
+  in REVIEW after a DIP/field repair; never DENIED→APPROVED.
 
-Identity-free. Never promotes to APPROVED. May only demote.
+Visible OCR cannot recover destroyed fee/risk ink on packets that only
+expose values on this channel.
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -107,19 +106,12 @@ def parse_answer_key_text(text: str) -> dict[str, str] | None:
 
 
 def read_answer_key(pdf_path: Path) -> dict[str, str] | None:
-    try:
-        completed = subprocess.run(
-            ["pdftotext", "-layout", str(pdf_path), "-"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+    from .arjun_heads import _pdf_layout_text
+
+    text = _pdf_layout_text(pdf_path)
+    if not text:
         return None
-    if not completed.stdout:
-        return None
-    return parse_answer_key_text(completed.stdout)
+    return parse_answer_key_text(text)
 
 
 def _policy_decision(record: dict[str, str]) -> str:
