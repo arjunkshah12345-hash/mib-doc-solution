@@ -3,7 +3,7 @@
 Offline PDF extraction + adjudication for the
 [MIB Doc Challenge](https://github.com/8090-inc/mib-doc-challenge).
 
-**Ship build v27:** **132.34 / 150**, **CFA = 0** on the 1,000 public train
+**Ship build v28:** **132.50 / 150**, **CFA = 0** on the 1,000 public train
 cases (official harness). See `MEMO.md` and `ATTRIBUTION.md`.
 
 ## Pipeline

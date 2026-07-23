@@ -40,8 +40,8 @@ are produced by this repository’s runtime.
 
 ## Measured train score (ship build v27)
 
-Official harness, 1,000 public train PDFs: **132.340 / 150**, **CFA = 0**
-(extraction 46.439, classification 68.97, calibration 16.931).
+Official harness, 1,000 public train PDFs: **132.50 / 150**, **CFA = 0**
+(extraction 46.44, classification 69.15, calibration 16.91).
 
 ## License
 

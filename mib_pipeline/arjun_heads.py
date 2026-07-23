@@ -39,10 +39,9 @@ _KNOWN_PURPOSES = (
     "transit",
 )
 
-# Medical travel is the one purpose class that policy-ties to biohazard
-# screening. When B-13 ink is silent we refuse to approve it (fail closed),
-# rather than blacklisting unrelated purposes from the train FA list.
-_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-1", "XW-2"})
+# DIP-1 only: XW layout consensus created a train CFA (silent memory_tampering
+# stamp). Diplomatic packets are the measured safe cohort for this unlock.
+_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1"})
 _LAYOUT_CONSENSUS_EMBARGOED = frozenset({"TRAPPIST-1e", "Eris Relay"})
 _LAYOUT_CONSENSUS_REVOKED = frozenset(
     {
@@ -274,17 +273,16 @@ def apply_layout_consensus_approval(
     row: PredictionRow,
     pdf_path: Path,
 ) -> PredictionRow:
-    """Approve DIP/XW packets with *visible* fee + cross-form name consensus.
+    """Approve DIP-1 packets with *visible* fee + cross-form name consensus.
 
     Submission-safe design (no train page-count / purpose laundry lists):
 
-    - Never MED-3 / TRANSIT-7 (silent biohazard / hard deny classes).
+    - DIP-1 only (XW unlocks caused a silent-stamp CFA on train).
     - Require ``fee_status=paid`` *and* a visible ``$809`` fee amount so the
       serialized fee is not a schema guess.
     - Require unique registry name == applicant name (intake not sponsor-only).
     - Skip ``medical consult``: policy-adjacent to biohazard screening when
       B-13 ink is unreadable — fail closed to REVIEW.
-    - No page-count gate (that was train-template overfit).
     """
 
     if row.adjudication != "NEEDS_REVIEW":
