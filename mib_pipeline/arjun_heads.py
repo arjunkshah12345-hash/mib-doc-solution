@@ -39,9 +39,10 @@ _KNOWN_PURPOSES = (
     "transit",
 )
 
-# DIP-1 only: XW layout consensus created a train CFA (silent memory_tampering
-# stamp). Diplomatic packets are the measured safe cohort for this unlock.
-_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1"})
+# DIP-1 + XW-2: full XW-1|XW-2 unlock caused a train CFA (silent
+# memory_tampering on MIB-000068 / XW-1). Measured safe cohort is DIP-1 and
+# XW-2 only (XW-2 alone: +16 prom, 0 CFA on train).
+_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})
 _LAYOUT_CONSENSUS_EMBARGOED = frozenset({"TRAPPIST-1e", "Eris Relay"})
 _LAYOUT_CONSENSUS_REVOKED = frozenset(
     {
@@ -273,11 +274,11 @@ def apply_layout_consensus_approval(
     row: PredictionRow,
     pdf_path: Path,
 ) -> PredictionRow:
-    """Approve DIP-1 packets with *visible* fee + cross-form name consensus.
+    """Approve DIP-1 / XW-2 packets with *visible* fee + name consensus.
 
     Submission-safe design (no train page-count / purpose laundry lists):
 
-    - DIP-1 only (XW unlocks caused a silent-stamp CFA on train).
+    - DIP-1 and XW-2 only (adding XW-1 caused a silent-stamp CFA on train).
     - Require ``fee_status=paid`` *and* a visible ``$809`` fee amount so the
       serialized fee is not a schema guess.
     - Require unique registry name == applicant name (intake not sponsor-only).

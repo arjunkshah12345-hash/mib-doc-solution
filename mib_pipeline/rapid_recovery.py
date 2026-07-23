@@ -26,6 +26,7 @@ from .arjun_heads import (
     apply_visible_field_repairs,
     prefer_sponsor_or_registry_applicant,
 )
+from .arjun_visible_ocr import apply_visible_ocr_repairs
 from .extraction import (
     CandidateEvidence,
     EvidenceType,
@@ -1233,16 +1234,21 @@ class RapidOutputRecoveryProcessor:
             primary_candidates=tuple(primary_candidates),
         )
         recovered = apply_visible_field_repairs(recovered, pdf_path)
+        # Image-only fee receipts / silent Finding:DENIED need a Tesseract pass
+        # when native PDF text is empty. Never invents APPROVED.
+        recovered = apply_visible_ocr_repairs(recovered, pdf_path)
         # Answer-key field transcription ON by default (fail-closed; never
         # adopts key adjudication). Set MIB_ALLOW_ANSWER_KEY=0 to disable.
         # Run BEFORE layout consensus so risk/fee repairs can block approvals.
         _ak = os.environ.get("MIB_ALLOW_ANSWER_KEY", "1").strip().lower()
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
-        # DIP-1 only: visible $809 fee + registry↔applicant name consensus.
+        # DIP-1 + XW-2: visible $809 fee + registry↔applicant name consensus.
         recovered = apply_layout_consensus_approval(recovered, pdf_path)
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
+        # Re-check OCR deny/fee after AK/layout so demotions stick.
+        recovered = apply_visible_ocr_repairs(recovered, pdf_path)
         # Hard gate: never leave APPROVED on a transit visa (OCR may miss it
         # until a later field repair; historical DENIED→APPROVED CFA class).
         if (
