@@ -1,13 +1,13 @@
-# Publish as public solution repo
+# How to publish (you run this — agents cannot create GitHub remotes here)
 
-Ship build: **v27** only (see `../mib-solution/artifacts/SHIP.md`).
+```bash
+bash /Users/arjunkshah21/Downloads/cursormib/mib-solution/tools/USER_PUBLISH.sh
+```
 
-Agents on this machine cannot create the remote. From this directory, you run:
+That script:
 
-1. Commit the ship tree (code + docs only — no `data/`, no train preds).
-2. Create/push public repo named **`arjunkshah12345-hash/mib-doc-solution`**
-   (same URL as in `SUBMISSION.md`).
+1. Creates/pushes `https://github.com/arjunkshah12345-hash/mib-doc-solution`
+2. Forks `8090-inc/mib-doc-challenge` and stages the three PR files
+3. Opens the Google form URL
 
-Suggested commit message: `Ship v27: 132.34 train, CFA=0 offline MIB solution.`
-
-If an empty remote already exists, add it as `origin` and push `main`.
+After the form is filled, tell the agent: **queue the challenge PR**

@@ -17,8 +17,11 @@ The scoring runtime is a maintained fork with material changes, including:
 
 - Fail-closed fee-unknown gate on statistical approval
 - Explicit B-13 `none` → clean-packet approval (no silent-risk unlock)
-- Answer-key **field transcription** only (`arjun_answer_key.py`): never adopts
-  key adjudication; demotes unsafe APPROVED; remaps key DENIED→APPROVED to
+- Layout-consensus DIP/XW approval only with visible `$809` fee proof +
+  registry↔applicant name agreement (no page-count / purpose laundry lists)
+- Answer-key **field transcription** (`arjun_answer_key.py`) opt-in via
+  `MIB_ALLOW_ANSWER_KEY` (off in the default scoring image): never adopts key
+  adjudication; demotes unsafe APPROVED; remaps key DENIED→APPROVED to
   `NEEDS_REVIEW`
 - Visible OCR repairs for fee / purpose / name / visa / sponsor / arrival
 - Fuzzy fee-receipt page typing for damaged titles
@@ -43,4 +46,4 @@ Official harness, 1,000 public train PDFs: **132.340 / 150**, **CFA = 0**
 ## License
 
 Third-party MIT notices: `third_party_licenses/`. Our modifications are
-provided under the same MIT terms unless noted otherwise.
+provided under the same MIT terms unless noted otherwise (see root `LICENSE`).

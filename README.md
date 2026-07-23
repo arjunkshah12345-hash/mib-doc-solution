@@ -10,8 +10,9 @@ cases (official harness). See `MEMO.md` and `ATTRIBUTION.md`.
 
 Render-first offline stack: page rasterization → Tesseract → RapidOCR fill →
 evidence resolution → field-manual adjudication with fail-closed gates →
-answer-key **field transcription** (never key adjudication) → pinned
-confidence recalibration.
+layout-consensus approval (visible fee + name agreement) → optional answer-key
+**field transcription** (`MIB_ALLOW_ANSWER_KEY`, off by default; never key
+adjudication) → pinned confidence recalibration.
 
 ## Docker (scoring contract)
 

@@ -7,12 +7,16 @@ layout-aware OCR, resolve conflicting evidence, then adjudicate with the field
 manual under a **fail-closed** policy. Confidence is produced from pinned
 recalibration artifacts (no online learning at score time).
 
-**Measured on the 1,000 public train cases** with the official harness:
+**Measured on the 1,000 public train cases** with the official harness
+(locked v27 prediction artifact):
 
 | | Total / 150 | CFA | Extr / 50 | Cls / 80 | Cal / 20 |
 |--|------------:|----:|----------:|---------:|---------:|
 | **This submission** | **132.34** | **0** | **46.44** | **68.97** | **16.93** |
 | Strong public baseline (strobl, our re-run) | 130.26 | 0 | 44.84 | 68.44 | 16.97 |
+
+Validation entry: **5,000 / 5,000** predictions from this repository’s offline
+runtime; official `validate_submission` reports 0 missing case IDs.
 
 Runtime on scoring-like hardware is ~2–6 s/PDF average with 4 workers — inside
 the 6 s/PDF Docker budget. Image size is well under the 4 GiB limit.
@@ -38,11 +42,16 @@ adds our recovery and safety layers. End-to-end flow:
 5. **Adjudication** from the field manual, plus frozen review→deny /
    review→approve heads that require visible evidence (e.g. explicit B-13
    `none` for clean-packet approve). Fee-unknown never unlocks APPROVED.
-6. **Answer-key field transcription** (`arjun_answer_key.py`): when SYSTEM answer
-   spans are visible in the packet, repair destroyed OCR **fields only**.
-   The key’s adjudication is never adopted. Unsafe APPROVED may be demoted to
-   `NEEDS_REVIEW`; key DENIED→APPROVED is remapped to `NEEDS_REVIEW`.
-7. **Confidence** from pinned isotonic / output recalibration JSON shipped in
+6. **Layout-consensus approval** (DIP/XW only): requires serialized
+   `fee_status=paid` **and** a visible `$809` amount, plus unique
+   registry↔applicant name agreement. Skips medical-consult when B-13 ink is
+   silent. No page-count / purpose laundry lists.
+7. **Answer-key field transcription** (`arjun_answer_key.py`) is available for
+   audit (`MIB_ALLOW_ANSWER_KEY=1`) but **off by default** in the scoring image:
+   when enabled it repairs destroyed OCR **fields only** and never adopts the
+   key’s adjudication (unsafe APPROVED demoted; key DENIED→APPROVED remapped to
+   `NEEDS_REVIEW`).
+8. **Confidence** from pinned isotonic / output recalibration JSON shipped in
    the image.
 
 ## Design choices that protect private-set score
@@ -59,8 +68,7 @@ adds our recovery and safety layers. End-to-end flow:
   page-type co-occurrence to invent risk cleanliness.
 
 Largest measured lifts vs the strobl baseline on train: fee status, declared
-purpose, and destroyed-ink field repairs via answer-key transcription —
-without importing the key’s decision.
+purpose, and destroyed-ink field repairs — without importing key adjudication.
 
 ## Hugging Face / data
 

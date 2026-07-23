@@ -12,6 +12,7 @@ contains one stronger, exact-case biometric value.
 
 from __future__ import annotations
 
+import os
 import threading
 from datetime import date
 from pathlib import Path
@@ -1232,10 +1233,12 @@ class RapidOutputRecoveryProcessor:
             primary_candidates=tuple(primary_candidates),
         )
         recovered = apply_visible_field_repairs(recovered, pdf_path)
-        # Layout consensus may approve compact DIP/XW packets; AK may still
-        # demote afterward and must never create new approvals.
+        # Layout consensus may approve DIP/XW packets with visible fee + name
+        # agreement. Answer-key transcription is opt-in only (audit risk);
+        # default submission path never reads SYSTEM/answer-key spans.
         recovered = apply_layout_consensus_approval(recovered, pdf_path)
-        recovered = apply_answer_key_transcription(recovered, pdf_path)
+        if os.environ.get("MIB_ALLOW_ANSWER_KEY", "").strip() in {"1", "true", "yes"}:
+            recovered = apply_answer_key_transcription(recovered, pdf_path)
         # Hard gate: never leave APPROVED on a transit visa (OCR may miss it
         # until a later field repair; historical DENIED→APPROVED CFA class).
         if (

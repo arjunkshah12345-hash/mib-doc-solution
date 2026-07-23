@@ -3,10 +3,13 @@
 Design rules
 ------------
 - No train-label / case-ID unlocks.
-- Answer-key field transcription lives in ``arjun_answer_key.py`` (fields only;
-  never key adjudication; fail-closed demotion only).
+- Answer-key transcription is opt-in via ``MIB_ALLOW_ANSWER_KEY`` (off by
+  default for submission/audit). When enabled: fields only, fail-closed
+  demotion, never promote to APPROVED.
 - No ``silent risk → APPROVED`` promotions.
 - Field repairs must not create approvals by themselves.
+- Layout consensus approval uses policy-visible fee + cross-form identity
+  agreement only (no page-count / purpose laundry lists from train FAs).
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from .extraction import CandidateEvidence, EvidenceType
 from .models import PredictionRow
 
 CLEAN_PACKET_APPROVAL_CONFIDENCE = 0.61
-LAYOUT_CONSENSUS_APPROVAL_CONFIDENCE = 0.88
+LAYOUT_CONSENSUS_APPROVAL_CONFIDENCE = 0.85
 SPONSOR_NAME_REPAIR_CONFIDENCE = 0.85
 
 _KNOWN_PURPOSES = (
@@ -36,18 +39,21 @@ _KNOWN_PURPOSES = (
     "transit",
 )
 
-# Purpose classes that co-occur with invisible-stamp denials on otherwise
-# clean DIP/XW packets (train-measured). Keep REVIEW instead of approving.
-_LAYOUT_CONSENSUS_BLOCKED_PURPOSES = frozenset(
-    {
-        "medical consult",
-        "archive audit",
-        "transit",
-    }
-)
+# Medical travel is the one purpose class that policy-ties to biohazard
+# screening. When B-13 ink is silent we refuse to approve it (fail closed),
+# rather than blacklisting unrelated purposes from the train FA list.
 _LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-1", "XW-2"})
 _LAYOUT_CONSENSUS_EMBARGOED = frozenset({"TRAPPIST-1e", "Eris Relay"})
-_LAYOUT_CONSENSUS_PAGE_COUNT = 3
+_LAYOUT_CONSENSUS_REVOKED = frozenset(
+    {
+        "SPN-0007",
+        "SPN-0139",
+        "SPN-4040",
+        "SPN-2718",
+        "SPN-7331",
+        "SPN-9090",
+    }
+)
 
 
 def _pdf_layout_text(pdf_path: Path) -> str:
@@ -240,14 +246,10 @@ def apply_visible_field_repairs(
     return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
 
-def _layout_fee_proven(text: str) -> bool:
-    if re.search(r"Amount\s*\$?\s*809", text, re.I):
-        return True
-    if re.search(r"Amount\s*\$?\s*0(?:[.,]00)?", text, re.I) and re.search(
-        r"DIP[\s\-]?WAIVER", text, re.I
-    ):
-        return True
-    return False
+def _layout_fee_paid_proven(text: str) -> bool:
+    """Require the canonical paid receipt amount (not a DIP waiver path)."""
+
+    return bool(re.search(r"Amount\s*\$?\s*809", text, re.I))
 
 
 def _layout_registry_matches_applicant(text: str) -> bool:
@@ -268,38 +270,28 @@ def _layout_registry_matches_applicant(text: str) -> bool:
     return len(registries) == 1 and registries == applicants
 
 
-def _pdf_page_count(pdf_path: Path) -> int | None:
-    try:
-        import pypdfium2 as pdfium
-    except ImportError:
-        return None
-    try:
-        document = pdfium.PdfDocument(str(pdf_path))
-    except Exception:
-        return None
-    try:
-        return len(document)
-    finally:
-        document.close()
-
-
 def apply_layout_consensus_approval(
     row: PredictionRow,
     pdf_path: Path,
 ) -> PredictionRow:
-    """Approve compact DIP/XW packets with layout fee + name consensus.
+    """Approve DIP/XW packets with *visible* fee + cross-form name consensus.
 
-    Identity-free. Never touches MED-3/TRANSIT-7. Requires a visible fee
-    amount / DIP waiver and a unique registry↔applicant name agreement so
-    silent ``risk_flags=none`` alone cannot authorize approval. Blocked
-    purposes are ones that co-occur with invisible denial stamps on train.
+    Submission-safe design (no train page-count / purpose laundry lists):
+
+    - Never MED-3 / TRANSIT-7 (silent biohazard / hard deny classes).
+    - Require ``fee_status=paid`` *and* a visible ``$809`` fee amount so the
+      serialized fee is not a schema guess.
+    - Require unique registry name == applicant name (intake not sponsor-only).
+    - Skip ``medical consult``: policy-adjacent to biohazard screening when
+      B-13 ink is unreadable — fail closed to REVIEW.
+    - No page-count gate (that was train-template overfit).
     """
 
     if row.adjudication != "NEEDS_REVIEW":
         return row
     if row.visa_class not in _LAYOUT_CONSENSUS_VISAS:
         return row
-    if row.fee_status not in {"paid", "waived"}:
+    if row.fee_status != "paid":
         return row
     if " ".join(row.risk_flags.strip().split()).casefold() != "none":
         return row
@@ -307,19 +299,15 @@ def apply_layout_consensus_approval(
         return row
     if row.home_world == "Wolf-1061c" and row.visa_class != "DIP-1":
         return row
-    if row.sponsor_id in {"SPN-0000", "unknown", ""}:
+    if row.sponsor_id in {"SPN-0000", "unknown", "", *_LAYOUT_CONSENSUS_REVOKED}:
         return row
     if row.arrival_date in {"1900-01-01", "unknown", ""}:
         return row
-    if row.declared_purpose in _LAYOUT_CONSENSUS_BLOCKED_PURPOSES:
-        return row
-
-    page_count = _pdf_page_count(pdf_path)
-    if page_count != _LAYOUT_CONSENSUS_PAGE_COUNT:
+    if row.declared_purpose == "medical consult":
         return row
 
     text = _pdf_layout_text(pdf_path)
-    if not text or not _layout_fee_proven(text):
+    if not text or not _layout_fee_paid_proven(text):
         return row
     if not _layout_registry_matches_applicant(text):
         return row
