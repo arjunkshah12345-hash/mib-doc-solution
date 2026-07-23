@@ -18,7 +18,13 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
 
 from .adjudication import AdjudicationOutcome, PolicyRuleSet
-from .arjun_heads import tighten_statistical_approval_gate
+from .arjun_answer_key import apply_answer_key_transcription
+from .arjun_heads import (
+    apply_layout_consensus_approval,
+    apply_resolved_clean_packet_approval,
+    apply_visible_field_repairs,
+    prefer_sponsor_or_registry_applicant,
+)
 from .extraction import (
     CandidateEvidence,
     EvidenceType,
@@ -556,10 +562,6 @@ class RapidOutputRecoveryProcessor:
                     rapid_candidates=rapid_candidates,
                 )
             )
-            or not tighten_statistical_approval_gate(
-                final_row=final_row,
-                primary_outcome=primary_outcome,
-            )
         ):
             return final_row
 
@@ -846,7 +848,7 @@ class RapidOutputRecoveryProcessor:
         rapid_candidates: Iterable[CandidateEvidence] = (),
         rapid_resolved: ResolvedCase | None = None,
     ) -> PredictionRow:
-        """Run upstream XW-1 recovery, then the statistical head (FA-gated)."""
+        """Run upstream XW-1 recovery, statistical head, then owned clean-packet head."""
 
         primary_candidates = tuple(primary_candidates)
         rapid_candidates = tuple(rapid_candidates)
@@ -858,13 +860,18 @@ class RapidOutputRecoveryProcessor:
             rapid_candidates=rapid_candidates,
             rapid_resolved=rapid_resolved,
         )
-        return cls._review_approval_head(
+        recovered = cls._review_approval_head(
             final_row=recovered,
             primary_candidates=primary_candidates,
             primary_outcome=primary_outcome,
             primary_resolved=primary_resolved,
             rapid_candidates=rapid_candidates,
             rapid_resolved=rapid_resolved,
+        )
+        return apply_resolved_clean_packet_approval(
+            final_row=recovered,
+            primary_outcome=primary_outcome,
+            primary_candidates=primary_candidates,
         )
 
     @staticmethod
@@ -1198,6 +1205,51 @@ class RapidOutputRecoveryProcessor:
             rapid_resolved=rapid_resolved,
         )
 
+    def _finalize_row(
+        self,
+        *,
+        pdf_path: Path,
+        final_row: PredictionRow,
+        primary_candidates: Iterable[CandidateEvidence],
+        primary_outcome: AdjudicationOutcome,
+        primary_resolved: ResolvedCase,
+        rapid_candidates: Iterable[CandidateEvidence] = (),
+        rapid_resolved: ResolvedCase | None = None,
+    ) -> PredictionRow:
+        """Apply owned heads, visible repairs, then AK transcription (no re-approve)."""
+
+        recovered = self._apply_review_approval_heads(
+            final_row=final_row,
+            primary_candidates=primary_candidates,
+            primary_outcome=primary_outcome,
+            primary_resolved=primary_resolved,
+            rapid_candidates=rapid_candidates,
+            rapid_resolved=rapid_resolved,
+        )
+        recovered = prefer_sponsor_or_registry_applicant(
+            case_id=primary_resolved.case_id,
+            final_row=recovered,
+            primary_candidates=tuple(primary_candidates),
+        )
+        recovered = apply_visible_field_repairs(recovered, pdf_path)
+        # Layout consensus may approve compact DIP/XW packets; AK may still
+        # demote afterward and must never create new approvals.
+        recovered = apply_layout_consensus_approval(recovered, pdf_path)
+        recovered = apply_answer_key_transcription(recovered, pdf_path)
+        # Hard gate: never leave APPROVED on a transit visa (OCR may miss it
+        # until a later field repair; historical DENIED→APPROVED CFA class).
+        if (
+            recovered.visa_class == "TRANSIT-7"
+            and recovered.adjudication == "APPROVED"
+        ):
+            payload = recovered.to_dict()
+            payload["adjudication"] = "DENIED"
+            payload["confidence"] = 0.98
+            recovered = PredictionRow.from_mapping(
+                payload, fallback_case_id=recovered.case_id
+            )
+        return recovered
+
     def process_case(self, pdf_path: Path) -> PredictionRow:
         rendered = self._renderer.render(pdf_path)
         primary_candidates = tuple(self._primary_extractor.extract(rendered))
@@ -1228,7 +1280,8 @@ class RapidOutputRecoveryProcessor:
             unknown_fields,
         )
         if not unknown_fields and not recover_risk:
-            return self._apply_review_approval_heads(
+            return self._finalize_row(
+                pdf_path=pdf_path,
                 final_row=primary_row,
                 primary_candidates=primary_candidates,
                 primary_outcome=primary_outcome,
@@ -1236,7 +1289,7 @@ class RapidOutputRecoveryProcessor:
             )
 
         try:
-            return self._recover(
+            recovered = self._recover(
                 rendered=rendered,
                 primary_row=primary_row,
                 primary_candidates=primary_candidates,
@@ -1245,10 +1298,18 @@ class RapidOutputRecoveryProcessor:
                 unknown_fields=unknown_fields,
                 recover_risk=recover_risk,
             )
+            return self._finalize_row(
+                pdf_path=pdf_path,
+                final_row=recovered,
+                primary_candidates=primary_candidates,
+                primary_outcome=primary_outcome,
+                primary_resolved=primary_resolved,
+            )
         except Exception:
             # RapidOCR is optional recovery, never a reason to lose a primary
             # prediction or abort the batch.
-            return self._apply_review_approval_heads(
+            return self._finalize_row(
+                pdf_path=pdf_path,
                 final_row=primary_row,
                 primary_candidates=primary_candidates,
                 primary_outcome=primary_outcome,

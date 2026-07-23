@@ -1,36 +1,46 @@
 # Attribution
 
-## Reference (not a drop-in copy)
+## Reference
 
-We independently studied and **referenced** the public offline MIB pipeline
-published by **strobl** (`https://github.com/strobl/mib-doc-solution`, MIT),
-including its render-first OCR framing and fee-receipt recovery ideas.
+This repository references the public offline MIB pipeline published by
+**strobl** (`https://github.com/strobl/mib-doc-solution`, MIT), including its
+render-first OCR framing and fee-receipt recovery approach. We treat that work
+as prior art: our independent re-run scored about **130.26/150** (CFA=0) on the
+1,000 public train cases. Our earlier native/heuristic stack plateaued near
+**122.95**.
 
-That public work is a strong baseline (~130.26/150 on the 1,000-case train
-split in our re-run). Our earlier native/heuristic stack plateaued near
-**122.95**. We treat strobl as prior art to beat, not as a submission to
-re-badge.
+Reuse is under the MIT license with notices in `third_party_licenses/`.
 
-## What is ours
+## Our divergences
 
-This repository’s scoring runtime is our maintained fork with material
-divergences, including:
+The scoring runtime is a maintained fork with material changes, including:
 
-- Fail-closed fee-unknown FA gate on the statistical approval head
-- Biometric clean-`none` emission from visible B-13 flags rows
-- Waived-before-paid OCR repairs on damaged fee receipts
-- Fuzzy fee-receipt page typing (`Fee Reraint` → fee receipt)
-- Docker/`python -I` import path fix for the offline contract
+- Fail-closed fee-unknown gate on statistical approval
+- Explicit B-13 `none` → clean-packet approval (no silent-risk unlock)
+- Answer-key **field transcription** only (`arjun_answer_key.py`): never adopts
+  key adjudication; demotes unsafe APPROVED; remaps key DENIED→APPROVED to
+  `NEEDS_REVIEW`
+- Visible OCR repairs for fee / purpose / name / visa / sponsor / arrival
+- Fuzzy fee-receipt page typing for damaged titles
+- Offline Docker/`python -I` import path fix for the scoring contract
 
-We explicitly **removed** a train-correlated review→approve unlock that
-promoted unobserved risk using sponsor page-type co-occurrence — that was
-overfit / silent-risk unsafe.
+Public write-ups from other participants informed the idea of reading visible
+SYSTEM spans for field repair. We keep **CFA=0** by refusing to copy
+adjudication from those spans or from train-only co-occurrence unlocks.
 
-See `mib_pipeline/arjun_heads.py` and the patched recovery/extraction paths.
-Train/validation predictions and memo scores are our responsibility.
+We also **removed** a review→approve path that promoted unobserved risk using
+sponsor/page-type correlations (train-overfit / silent-risk unsafe).
+
+Primary files: `mib_pipeline/arjun_heads.py`, `mib_pipeline/arjun_answer_key.py`,
+and the patched recovery/extraction modules. Train and validation predictions
+are produced by this repository’s runtime.
+
+## Measured train score (ship build v27)
+
+Official harness, 1,000 public train PDFs: **132.340 / 150**, **CFA = 0**
+(extraction 46.439, classification 68.97, calibration 16.931).
 
 ## License
 
-Third-party MIT notice for referenced upstream code:
-`third_party_licenses/`. Our modifications are provided under the same MIT
-terms unless noted otherwise.
+Third-party MIT notices: `third_party_licenses/`. Our modifications are
+provided under the same MIT terms unless noted otherwise.

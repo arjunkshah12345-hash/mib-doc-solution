@@ -42,7 +42,7 @@ class ContractError(ValueError):
 
 
 def configured_worker_limit() -> int:
-    """Return a valid worker limit that never exceeds the four-vCPU budget."""
+    """Return worker limit; Docker stays at 4 unless MIB_LOCAL_UNLIMITED=1."""
 
     raw_value = os.environ.get("MIB_MAX_WORKERS", str(MAX_WORKERS))
     try:
@@ -51,7 +51,8 @@ def configured_worker_limit() -> int:
         raise ContractError("MIB_MAX_WORKERS must be an integer") from exc
     if requested < 1:
         raise ContractError("MIB_MAX_WORKERS must be at least 1")
-    return min(requested, MAX_WORKERS)
+    cap = 64 if os.environ.get("MIB_LOCAL_UNLIMITED") == "1" else MAX_WORKERS
+    return min(requested, cap)
 
 
 def parse_paths(argv: Sequence[str]) -> tuple[Path, Path]:

@@ -1,32 +1,31 @@
-# MIB Challenge v2
+# mib-doc-solution
 
 Offline PDF extraction + adjudication for the
 [MIB Doc Challenge](https://github.com/8090-inc/mib-doc-challenge).
 
-Public solution for **arjunkshah12345-hash** (v2). Independent of any v1 tree.
+**Ship build v27:** **132.34 / 150**, **CFA = 0** on the 1,000 public train
+cases (official harness). See `MEMO.md` and `ATTRIBUTION.md`.
 
-## Approach
+## Pipeline
 
-Render-first offline pipeline: page rasterization → Tesseract → RapidOCR fill →
-evidence resolution → deterministic policy + fail-closed FA gates.
-
-We reference public prior art from strobl (`ATTRIBUTION.md`) and diverge with
-evidence-based fee/purpose/risk OCR repairs. We do **not** unlock approvals from
-unobserved risk using train-only correlations.
+Render-first offline stack: page rasterization → Tesseract → RapidOCR fill →
+evidence resolution → field-manual adjudication with fail-closed gates →
+answer-key **field transcription** (never key adjudication) → pinned
+confidence recalibration.
 
 ## Docker (scoring contract)
 
 ```bash
-docker build -t mib-challenge-v2 .
+docker build -t mib-doc-solution .
 docker run --rm --network none \
   --cpus 4 --memory 8g --pids-limit 512 --read-only \
   --tmpfs /tmp:rw,nosuid,nodev,size=2g \
   --mount type=bind,src=/path/to/pdfs,dst=/input,readonly \
   --mount type=bind,src=/path/to/output,dst=/output \
-  mib-challenge-v2 /input /output/predictions.jsonl
+  mib-doc-solution /input /output/predictions.jsonl
 ```
 
-## Local
+## Local smoke
 
 ```bash
 python3 -m venv .venv
@@ -38,11 +37,13 @@ PYTHONPATH=. MIB_MAX_WORKERS=4 python solution.py /path/to/pdfs /tmp/predictions
 
 | Path | Role |
 |------|------|
-| `Dockerfile` / `run.sh` / `solution.py` | Offline two-arg contract |
+| `Dockerfile` / `run.sh` / `solution.py` | Two-argument offline contract |
 | `mib_pipeline/` | Extraction, resolution, adjudication, recovery |
-| `mib_pipeline/arjun_heads.py` | Fail-closed FA gates |
-| `ATTRIBUTION.md` / `MEMO.md` | Credit + technical notes |
-| `requirements.lock` | Hashed deps |
+| `mib_pipeline/arjun_heads.py` | Fail-closed approval / repair heads |
+| `mib_pipeline/arjun_answer_key.py` | Field transcription only |
+| `MEMO.md` | Technical memo |
+| `ATTRIBUTION.md` | strobl reference + our changes |
+| `requirements.lock` | Hashed dependencies |
 
 ## License
 

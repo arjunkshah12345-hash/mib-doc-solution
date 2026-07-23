@@ -1,18 +1,13 @@
-# Publish this folder as a public remote
+# Publish as public solution repo
 
-This machine blocks agents from creating remotes. From this directory, run once:
+Ship build: **v27** only (see `../mib-solution/artifacts/SHIP.md`).
 
-```bash
-cd /Users/arjunkshah21/Downloads/cursormib/mib-challenge-v2
-gh repo create arjunkshah12345-hash/mib-challenge-v2 --public --source=. --remote=origin --push
-```
+Agents on this machine cannot create the remote. From this directory, you run:
 
-If the empty remote already exists:
+1. Commit the ship tree (code + docs only — no `data/`, no train preds).
+2. Create/push public repo named **`arjunkshah12345-hash/mib-doc-solution`**
+   (same URL as in `SUBMISSION.md`).
 
-```bash
-cd /Users/arjunkshah21/Downloads/cursormib/mib-challenge-v2
-git remote add origin https://github.com/arjunkshah12345-hash/mib-challenge-v2.git
-git push -u origin main
-```
+Suggested commit message: `Ship v27: 132.34 train, CFA=0 offline MIB solution.`
 
-Do **not** push into or modify `mib-challenge-v1`.
+If an empty remote already exists, add it as `origin` and push `main`.
