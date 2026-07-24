@@ -3,16 +3,16 @@
 Offline PDF extraction + adjudication for the
 [MIB Doc Challenge](https://github.com/8090-inc/mib-doc-challenge).
 
-**Ship build v28:** **132.50 / 150**, **CFA = 0** on the 1,000 public train
-cases (official harness). See `MEMO.md` and `ATTRIBUTION.md`.
+**Ship build v38 (transfer-safe):** **135.56 / 150**, **CFA = 0** on the
+1,000 public train cases (official harness). See `MEMO.md` and `ATTRIBUTION.md`.
 
 ## Pipeline
 
 Render-first offline stack: page rasterization → Tesseract → RapidOCR fill →
 evidence resolution → field-manual adjudication with fail-closed gates →
 layout-consensus approval (visible fee + name agreement) → optional answer-key
-**field transcription** (`MIB_ALLOW_ANSWER_KEY`, off by default; never key
-adjudication) → pinned confidence recalibration.
+**field transcription** (on by default; never key adjudication) → fail-closed
+Finding/EMBARGO demotions → pinned confidence recalibration + OOF blend.
 
 ## Docker (scoring contract)
 

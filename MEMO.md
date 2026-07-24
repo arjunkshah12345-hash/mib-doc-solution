@@ -8,11 +8,12 @@ manual under a **fail-closed** policy. Confidence is produced from pinned
 recalibration artifacts (no online learning at score time).
 
 **Measured on the 1,000 public train cases** with the official harness
-(locked v30 prediction artifact):
+(locked v38 transfer-safe prediction artifact):
 
 | | Total / 150 | CFA | Extr / 50 | Cls / 80 | Cal / 20 |
 |--|------------:|----:|----------:|---------:|---------:|
-| **This submission** | **133.60** | **0** | **46.44** | **70.12** | **17.04** |
+| **This submission (v38)** | **135.56** | **0** | **46.44** | **71.45** | **17.67** |
+| Prior ship (v30) | 133.60 | 0 | 46.44 | 70.12 | 17.04 |
 | Strong public baseline (strobl, our re-run) | 130.26 | 0 | 44.84 | 68.44 | 16.97 |
 
 Validation entry: **5,000 / 5,000** predictions from this repository’s offline
@@ -52,10 +53,13 @@ adds our recovery and safety layers. End-to-end flow:
    repairs destroyed OCR **fields only** and never adopts the key’s adjudication
    (unsafe APPROVED demoted; key DENIED→APPROVED remapped to `NEEDS_REVIEW`).
 8. **Post-approval safety heads** (never invent APPROVED): explicit layout
-   `Finding: DENIED`, `UNREADABLE`/`REDACTED` damage → REVIEW, and layout /
-   candidate risk demotion when disqualifying flags remain visible.
-9. **Confidence** from pinned isotonic / output recalibration JSON shipped in
-   the image.
+   `Finding: NEEDS_REVIEW` / `Finding: DENIED`, `Registry Status: EMBARGO` →
+   DENIED, `UNREADABLE`/`REDACTED` damage → REVIEW, TRANSIT-7 hard deny, and
+   layout / candidate risk demotion when disqualifying flags remain visible.
+9. **Confidence** from pinned isotonic / output recalibration, then an
+   identity-free OOF Laplace blend (`arjun_confidence.py`, blend=0.3 on
+   adjudication × fee_known × missing_field_count). Calibration only — never
+   changes labels. No purpose×page-signature approval allowlists.
 
 ## Design choices that protect private-set score
 

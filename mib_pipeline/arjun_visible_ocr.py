@@ -123,6 +123,11 @@ def _finding_denied(text: str) -> bool:
     return bool(re.search(r"\bFinding\b.{0,20}\bDENIED\b", cleaned, re.I | re.S))
 
 
+def _finding_needs_review(text: str) -> bool:
+    cleaned = re.sub(r"\bSAMPLE[- ]+DENIAL\b", "", text, flags=re.I)
+    return bool(re.search(r"Finding\s*[: ]\s*NEEDS[_\s]?REVIEW\b", cleaned, re.I))
+
+
 def _risk_tokens(text: str) -> str | None:
     flags: list[str] = []
     lowered = text.lower().replace(" ", "_")
@@ -145,6 +150,13 @@ def _risk_tokens(text: str) -> str | None:
     return "|".join(sorted(set(flags)))
 
 
+def _norm_risk(value: str | None) -> str:
+    raw = " ".join(str(value or "").strip().split()).casefold()
+    if raw in {"", "none", "null", "unknown"}:
+        return "none"
+    return raw
+
+
 def apply_visible_ocr_repairs(
     row: PredictionRow,
     pdf_path: Path,
@@ -153,10 +165,15 @@ def apply_visible_ocr_repairs(
 ) -> PredictionRow:
     """OCR fallback for fee/purpose/deny findings when native path is weak."""
 
-    needs_fee = row.fee_status in {"paid", "unknown"} or force
+    # Do not OCR every paid packet — that is slow and adds decoy noise.
+    # Fee OCR only when status is missing/weak; deny OCR on REVIEW/DENIED.
+    needs_fee = row.fee_status in {"unknown", "unpaid"} or force
     needs_purpose = row.declared_purpose == "reactor maintenance" or force
-    needs_deny = row.adjudication == "NEEDS_REVIEW" or force
-    if not (needs_fee or needs_purpose or needs_deny):
+    needs_deny = (
+        row.adjudication == "NEEDS_REVIEW" and _norm_risk(row.risk_flags) == "none"
+    ) or force
+    needs_review_finding = row.adjudication == "DENIED" or force
+    if not (needs_fee or needs_purpose or needs_deny or needs_review_finding):
         return row
 
     text = _ocr_packet(pdf_path)
@@ -193,6 +210,11 @@ def apply_visible_ocr_repairs(
     if needs_deny and _finding_denied(text):
         payload["adjudication"] = "DENIED"
         payload["confidence"] = 0.98
+        changed = True
+    elif needs_review_finding and _finding_needs_review(text):
+        # Exact Finding:NEEDS_REVIEW only — demote DENIED → REVIEW, never approve.
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = max(float(payload.get("confidence") or 0), 0.85)
         changed = True
     elif risk:
         disq = {

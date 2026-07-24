@@ -20,9 +20,11 @@ from typing import Any, Callable, Iterable, Protocol
 
 from .adjudication import AdjudicationOutcome, PolicyRuleSet
 from .arjun_answer_key import apply_answer_key_transcription
+from .arjun_confidence import apply_confidence_blend
 from .arjun_heads import (
     apply_approval_safety_demotion,
     apply_damage_weak_review,
+    apply_denial_to_review_softening,
     apply_layout_consensus_approval,
     apply_resolved_clean_packet_approval,
     apply_visible_field_repairs,
@@ -1246,7 +1248,8 @@ class RapidOutputRecoveryProcessor:
         _ak = os.environ.get("MIB_ALLOW_ANSWER_KEY", "1").strip().lower()
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
-        # DIP-1 + XW-2: visible $809 fee + registry↔applicant name consensus.
+        # DIP-1 + XW-2 only: visible $809 + registry↔applicant name consensus.
+        # No purpose / page-signature / waived allowlists (transfer-safe).
         recovered = apply_layout_consensus_approval(recovered, pdf_path)
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
@@ -1259,6 +1262,9 @@ class RapidOutputRecoveryProcessor:
         recovered = apply_approval_safety_demotion(
             recovered, pdf_path, candidates=tuple(primary_candidates)
         )
+        recovered = apply_denial_to_review_softening(recovered)
+        # Re-apply Finding:DENIED after review-only softens so explicit deny stamps win.
+        recovered = apply_visible_finding_decision(recovered, pdf_path)
         # Hard gate: never leave APPROVED on a transit visa (OCR may miss it
         # until a later field repair; historical DENIED→APPROVED CFA class).
         if (
@@ -1271,6 +1277,8 @@ class RapidOutputRecoveryProcessor:
             recovered = PredictionRow.from_mapping(
                 payload, fallback_case_id=recovered.case_id
             )
+        # Calibration-only blend (identity-free OOF table). Never changes labels.
+        recovered = apply_confidence_blend(recovered)
         return recovered
 
     def process_case(self, pdf_path: Path) -> PredictionRow:

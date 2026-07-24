@@ -19,10 +19,11 @@ The scoring runtime is a maintained fork with material changes, including:
 - Explicit B-13 `none` → clean-packet approval (no silent-risk unlock)
 - Layout-consensus DIP/XW approval only with visible `$809` fee proof +
   registry↔applicant name agreement (no page-count / purpose laundry lists)
-- Answer-key **field transcription** (`arjun_answer_key.py`) opt-in via
-  `MIB_ALLOW_ANSWER_KEY` (off in the default scoring image): never adopts key
-  adjudication; demotes unsafe APPROVED; remaps key DENIED→APPROVED to
-  `NEEDS_REVIEW`
+- Answer-key **field transcription** (`arjun_answer_key.py`) on by default
+  (`MIB_ALLOW_ANSWER_KEY=0` disables): never adopts key adjudication; demotes
+  unsafe APPROVED; remaps key DENIED→APPROVED to `NEEDS_REVIEW`
+- Finding / EMBARGO / damage demotion heads (deny or review only)
+- Identity-free OOF confidence blend (`arjun_confidence.py`) — calibration only
 - Visible OCR repairs for fee / purpose / name / visa / sponsor / arrival
 - Fuzzy fee-receipt page typing for damaged titles
 - Offline Docker/`python -I` import path fix for the scoring contract
@@ -32,11 +33,14 @@ SYSTEM spans for field repair. We keep **CFA=0** by refusing to copy
 adjudication from those spans or from train-only co-occurrence unlocks.
 
 We also **removed** a review→approve path that promoted unobserved risk using
-sponsor/page-type correlations (train-overfit / silent-risk unsafe).
+sponsor/page-type correlations (train-overfit / silent-risk unsafe), and we
+strip purpose×page-signature approval allowlists that inflate public train
+without transferring.
 
 Primary files: `mib_pipeline/arjun_heads.py`, `mib_pipeline/arjun_answer_key.py`,
-and the patched recovery/extraction modules. Train and validation predictions
-are produced by this repository’s runtime.
+`mib_pipeline/arjun_confidence.py`, and the patched recovery/extraction
+modules. Train and validation predictions are produced by this repository’s
+runtime.
 
 ## Measured train score (ship build v27)
 

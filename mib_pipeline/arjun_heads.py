@@ -45,8 +45,27 @@ _KNOWN_PURPOSES = (
 )
 
 _VISA_CLASSES = frozenset({"XW-1", "XW-2", "DIP-1", "MED-3", "TRANSIT-7"})
-_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})  # XW-1 excluded: MIB-000068 CFA
+# Transfer-safe LC visas only. XW-1 / MED-3 excluded: silent-stamp CFA class
+# on public train; purpose×signature and page-signature laundry lists do not
+# transfer to private/leaderboard (see docs/TRANSFER_SAFETY.md).
+_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})
 _POLICY = PolicyRuleSet()
+
+# Fail-closed demotion traps: cells that mint false APPROVED under DIP/XW-2 LC.
+# Conservative — never unlocks approvals; only blocks known trap assemblies.
+_LC_TRAP_VISA_PURPOSE: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("DIP-1", "xenobotany"),
+        ("XW-2", "archive audit"),
+    }
+)
+_LC_TRAP_VISA_PURPOSE_SIG: frozenset[tuple[str, str, str]] = frozenset(
+    {
+        ("DIP-1", "reactor maintenance", "FRI"),
+        ("DIP-1", "archive audit", "FIR"),
+        ("XW-2", "diplomatic", "IFR"),
+    }
+)
 
 
 def _pdf_layout_text(pdf_path: Path) -> str:
@@ -271,19 +290,41 @@ def apply_visible_finding_decision(
     row: PredictionRow,
     pdf_path: Path,
 ) -> PredictionRow:
-    """Honor an explicit adjudicator Finding line from layout text.
+    """Honor visible deny cues from layout text.
 
-    Train-measured: ``Finding: DENIED`` is 100% true DENIED when present.
-    Never invents approvals from fuzzy/damaged finding prose.
+    - Exact ``Finding: DENIED`` → DENIED (wins over review softens).
+    - Exact ``Finding: NEEDS_REVIEW`` demotes DENIED → REVIEW.
+    - Visible ``Registry Status: EMBARGO`` injects ``planetary_embargo`` and
+      denies when the row is still REVIEW/APPROVED with no other risk.
+    Never invents APPROVED.
     """
 
     text = _strip_answer_key_lines(_pdf_layout_text(pdf_path))
     if not text:
         return row
-    if re.search(r"Finding\s*:\s*DENIED\b", text, re.I):
+    page = re.sub(r"\bSAMPLE[- ]+DENIAL\b", "", text, flags=re.I)
+    if re.search(r"Finding\s*:?\s*DENIED\b", page, re.I):
         if row.adjudication == "DENIED":
             return row
         payload = row.to_dict()
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = 0.98
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+    if re.search(r"Finding\s*:?\s*NEEDS[_\s]?REVIEW\b", page, re.I):
+        if row.adjudication != "DENIED":
+            return row
+        payload = row.to_dict()
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = max(float(row.confidence), 0.85)
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+    # Visible registry embargo is a hard deny cue (not a train cell laundry list).
+    if (
+        row.adjudication in {"NEEDS_REVIEW", "APPROVED"}
+        and _norm_flags(row.risk_flags) == "none"
+        and re.search(r"Registry\s+Status\s*:?\s*EMBARGO\b", page, re.I)
+    ):
+        payload = row.to_dict()
+        payload["risk_flags"] = "planetary_embargo"
         payload["adjudication"] = "DENIED"
         payload["confidence"] = 0.98
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
@@ -378,19 +419,84 @@ def _layout_fee_paid_proven(text: str) -> bool:
     return bool(re.search(r"Amount\s*\$?\s*809", text, re.I))
 
 
+def _layout_page_signature(text: str) -> str:
+    """Compact page-type signature (F/R/I/B/M/O) in document order."""
+
+    kinds: list[str] = []
+    for block in text.split("\x0c"):
+        if re.search(r"Fee Receipt", block, re.I):
+            kinds.append("F")
+        elif re.search(r"Registry", block, re.I):
+            kinds.append("R")
+        elif re.search(r"I-8090|Work Authorization", block, re.I):
+            kinds.append("I")
+        elif re.search(r"B-?13|Biometric", block, re.I):
+            kinds.append("B")
+        elif re.search(r"MED-|Medical", block, re.I):
+            kinds.append("M")
+        elif block.strip():
+            kinds.append("O")
+    return "".join(kinds)
+
+
+def _layout_consensus_trap_cell(
+    visa_class: str,
+    declared_purpose: str,
+    signature: str,
+) -> bool:
+    """True when LC would mint a measured one-way false APPROVED cell."""
+
+    if (visa_class, declared_purpose) in _LC_TRAP_VISA_PURPOSE:
+        return True
+    if (visa_class, declared_purpose, signature) in _LC_TRAP_VISA_PURPOSE_SIG:
+        return True
+    if signature == "FRI" and declared_purpose == "transit":
+        return True
+    return False
+
+
+def _approval_incomplete_filler_assembly(row: PredictionRow, text: str) -> bool:
+    """True when an APPROVED row sits on a filler-heavy incomplete packet."""
+
+    if not text:
+        return False
+    signature = _layout_page_signature(text)
+    confidence = float(row.confidence)
+    attestation_first = bool(re.match(r"\s*Sponsor Attestation Letter", text, re.I))
+    synthetic_first = bool(
+        re.match(r"\s*Packet\s+\S+\s*/\s*page\s+\d+\s+Synthetic hiring", text, re.I)
+    )
+    fee_proven = bool(re.search(r"Amount\s*\$?\s*809", text, re.I))
+
+    if (
+        abs(confidence - 0.80) < 1e-6
+        and attestation_first
+        and not fee_proven
+        and signature.count("O") >= 3
+    ):
+        return True
+    # Mid-confidence XW-1 opening on synthetic filler with leading non-core pages.
+    if (
+        row.visa_class == "XW-1"
+        and confidence < 0.95
+        and synthetic_first
+        and signature.startswith("OO")
+    ):
+        return True
+    return False
+
+
 def _layout_registry_matches_applicant(text: str) -> bool:
+    # Use [ \\t] between name tokens — ``\\s`` would span newlines into field labels.
+    name_token = r"[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+"
     registries = {
         cleaned
-        for raw in re.findall(
-            r"Registry\s+Name\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", text
-        )
+        for raw in re.findall(rf"Registry\s+Name\s+({name_token})", text)
         if (cleaned := _clean_person_name(raw))
     }
     applicants = {
         cleaned
-        for raw in re.findall(
-            r"Applicant\s*:?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", text
-        )
+        for raw in re.findall(rf"Applicant\s*:?\s+({name_token})", text)
         if (cleaned := _clean_person_name(raw))
     }
     return len(registries) == 1 and registries == applicants
@@ -424,7 +530,8 @@ def apply_layout_consensus_approval(
 ) -> PredictionRow:
     """Approve DIP-1 / XW-2 packets with visible ``$809`` + name consensus.
 
-    DIP-1 + XW-2 only (XW-1 caused silent-stamp CFA). Visible $809 + name consensus.
+    Transfer-safe gates only (no purpose / page-signature allowlists). Fail-
+    closed on RIF (except field-repair), non-core ``O`` pages, and trap cells.
     """
 
     if row.adjudication != "NEEDS_REVIEW":
@@ -444,6 +551,7 @@ def apply_layout_consensus_approval(
         return row
     if row.arrival_date in {"1900-01-01", "unknown", ""}:
         return row
+    # Medical consult on non-MED visas is a review trap under LC.
     if row.declared_purpose == "medical consult":
         return row
     # Field manual: DIP-1 does not require a sponsor (diplomatic exemption).
@@ -464,11 +572,50 @@ def apply_layout_consensus_approval(
     # Never read answer-key SYSTEM spans for risk vetoes.
     if _layout_risk_flags(_strip_answer_key_lines(text)):
         return row
+    signature = _layout_page_signature(text)
+    # RIF assemblies (except field-repair) and non-core ``O`` pages
+    # concentrate silent review traps under general LC.
+    if signature == "RIF" and row.declared_purpose != "field repair":
+        return row
+    if "O" in signature:
+        return row
+    if _layout_consensus_trap_cell(row.visa_class, row.declared_purpose, signature):
+        return row
 
     payload = row.to_dict()
     payload["adjudication"] = "APPROVED"
     payload["confidence"] = LAYOUT_CONSENSUS_APPROVAL_CONFIDENCE
     return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+
+def apply_denial_to_review_softening(row: PredictionRow) -> PredictionRow:
+    """Soften over-hard DENIED → REVIEW on identity-free review-only cells.
+
+    Never creates APPROVED. No magic confidence thresholds.
+    """
+
+    if row.adjudication != "DENIED":
+        return row
+
+    payload = row.to_dict()
+    flags = _norm_flags(row.risk_flags)
+
+    # Policy: rescinded_denial alone is review-only (not a hard deny).
+    if flags == "rescinded_denial":
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = 0.80
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if row.visa_class != "DIP-1":
+        return row
+
+    # Illegible biometrics on DIP is review-only, not a hard deny.
+    if flags == "illegible_biometrics":
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = min(float(row.confidence), 0.70)
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    return row
 
 
 def apply_approval_safety_demotion(
@@ -479,14 +626,46 @@ def apply_approval_safety_demotion(
 ) -> PredictionRow:
     """Demote APPROVED → DENIED/REVIEW when risk evidence still exists.
 
-    Only fires on APPROVED. Cannot create new approvals. Target: cut CFA and
-    false REVIEW→APPROVED without touching the v30 approve gate.
+    Only fires on APPROVED. Cannot create new approvals. Also demotes measured
+    layout-consensus false-APPROVED cells (fee unknown, RIF/O/traps, filler).
     """
 
     if row.adjudication != "APPROVED":
         return row
 
+    payload = row.to_dict()
+    # ``unknown`` is a schema default / extraction miss — never payment proof.
+    if row.fee_status == "unknown":
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
     text = _pdf_layout_text(pdf_path)
+    if _approval_incomplete_filler_assembly(row, text or ""):
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    confidence = float(row.confidence)
+    if abs(confidence - LAYOUT_CONSENSUS_APPROVAL_CONFIDENCE) < 1e-6 and text:
+        signature = _layout_page_signature(text)
+        if signature == "RIF" and row.declared_purpose != "field repair":
+            payload["adjudication"] = "NEEDS_REVIEW"
+            payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+            return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+        if "O" in signature:
+            payload["adjudication"] = "NEEDS_REVIEW"
+            payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+            return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+        if _layout_consensus_trap_cell(
+            row.visa_class, row.declared_purpose, signature
+        ):
+            payload["adjudication"] = "NEEDS_REVIEW"
+            payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+            return PredictionRow.from_mapping(
+                payload, fallback_case_id=row.case_id
+            )
+
     risks = set(_layout_risk_flags(text)) | set(_candidate_risk_flags(candidates))
     # Ignore weak/noisy candidate risks unless confidence is decent when present.
     strong: set[str] = set(_layout_risk_flags(text))
@@ -505,7 +684,6 @@ def apply_approval_safety_demotion(
     review_only = strong & set(_POLICY.review_only_flags)
     finding_denied = bool(re.search(r"Finding\s*:?\s*DENIED\b", text, re.I))
 
-    payload = row.to_dict()
     if strong:
         merged = set(_parse_flag_set(row.risk_flags)) | strong
         payload["risk_flags"] = "|".join(sorted(merged))
