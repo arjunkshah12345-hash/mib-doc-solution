@@ -11,7 +11,7 @@ Approach, failure modes, and next-week plan are in `MEMO.md`.
 Validation predictions in this PR: **5,000 / 5,000** records, official
 validator clean (0 missing case IDs). Predictions SHA-256:
 
-`PENDING_VAL_SHA256`
+`47083e431085c603b9cf7cd26005079d16cf1e8d27c09463c7dd23601e98756d`
 
 The solution repository contains the complete offline runtime, hashed
 `requirements.lock`, and pinned recalibration artifacts. This challenge entry
