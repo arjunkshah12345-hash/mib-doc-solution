@@ -24,7 +24,10 @@ the 6 s/PDF Docker budget. Image size is well under the 4 GiB limit.
 
 We optimize for **leaderboard integrity**, not raw train inflation: zero
 catastrophic false approvals (DENIED predicted as APPROVED), identity-free
-rules, and no train-label lookups at inference.
+rules, and no train-label lookups at inference. We refuse singleton
+purpose×signature allowlists that push train toward ~138 but do not transfer.
+Full pre-submit audit: see solution-tree `docs/SUPER_SHIP_AUDIT_V38.md`
+(local) — CFA=0, 100% APPROVED precision, no case-ID locks.
 
 ## Approach
 
