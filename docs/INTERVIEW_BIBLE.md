@@ -1,11 +1,15 @@
 # The MIB Doc Challenge Bible
 
-**Shipped (live):** **138.086 / 150 · CFA = 0 · FAP = 0** (v41)  
-**Breakdown:** Extraction **46.43** · Classification **73.79** · Calibration **17.86**  
-**Repos:** https://github.com/arjunkshah12345-hash/mib-doc-solution  
-**PR:** https://github.com/8090-inc/mib-doc-challenge/pull/15  
+This book teaches one contest from zero. You do not need to know coding,
+PDFs, or “machine learning” yet. Each chapter only uses words the ones
+before it already explained.
 
-**How to read:** start at **§1 The contest**. Learn the game, then scoring, then the system. The climb (how we improved each time) comes **after** you know what the numbers mean.
+**Where we ended up (you can ignore the numbers for now):** we built a
+program, entered the contest, and scored about **138 out of 150** on the
+practice set without making the worst kind of mistake. Details come later.
+
+**How to read:** open **§1 The contest** and go in order. If a sentence
+feels dense, the next paragraph usually unpacks it in plain English.
 
 * * *
 # Contents
@@ -30,49 +34,167 @@
 * * *
 # 1. The contest
 
-## 1.0 One-sentence version
+*You are allowed to be confused. This chapter assumes you know nothing.*
 
-**8090 is hiring.** The costume is Men-in-Black alien paperwork. The real test: write a program that reads messy PDFs and decides APPROVED / DENIED / NEEDS_REVIEW — offline, CPU-only, without wrongly approving dangerous cases.
+## 1.0 The whole thing in five lines
 
-## 1.1 Costume vs skill
+1. A company called **8090** is running a public tryout (a hiring contest).
+2. The theme is fake **Men in Black** paperwork for aliens.
+3. Your job is **not** to pretend you’re an agent. Your job is to write a
+   **computer program** that reads those paperwork files.
+4. For each file, the program must say: **let them in**, **keep them out**,
+   or **ask a human**.
+5. Whoever’s program does this best — under strict rules — looks hireable.
 
-| Phrase | Meaning |
+That’s it. Everything else is detail.
+
+## 1.1 What’s actually happening (no jargon)
+
+Imagine a stack of messy application forms. Each “application” is a
+**PDF** — a digital document, like a multi-page scan you open on a laptop.
+
+A real human immigration officer would:
+
+- skim the pages,
+- copy down facts (name, visa type, whether the fee was paid…),
+- look for danger marks (stamps, warnings),
+- decide: approve, deny, or send to a supervisor.
+
+8090 says: **build a robot clerk that does that job.**
+
+The alien / Men-in-Black story is costume. The skill they want is:
+
+> Can you make software that reads hard documents carefully and decides
+> safely — without cheating and without calling the internet?
+
+## 1.2 Words you’ll see everywhere (said slowly)
+
+| Word you’ll see | Pretend it means… |
 |---|---|
-| **8090** | Organizers / hiring contest |
-| **Packet** | One multi-page PDF case |
-| **Adversarial** | Decoys, silent stamps, washed receipts, planted SYSTEM “answer keys” |
-| **Offline** | Scoring image: `--network none` — no ChatGPT, no cloud OCR |
+| **Contest / challenge** | The whole tryout 8090 is running |
+| **Packet / case** | One alien’s paperwork = usually one PDF file |
+| **Field** | One fact to extract, like “name” or “fee paid?” |
+| **Adjudication** | The final decision: approve / deny / needs a human |
+| **APPROVED** | “Let them in” |
+| **DENIED** | “Keep them out” |
+| **NEEDS_REVIEW** | “I’m not sure — ask a human” |
+| **Offline** | While they’re grading you, your program **cannot** use Wi‑Fi, ChatGPT, or cloud tools. Everything must already be inside the box you shipped. |
+| **Score** | A number out of **150**. Higher is better. Chapter 2 explains the math. |
 
-## 1.2 What you hand in
+You do **not** need the rest of the dictionary yet.
 
-1. **Public solution repo** with `Dockerfile` (recipe book) — ours: `mib-doc-solution`  
-2. **Challenge PR** under `submissions/<user>/`: `predictions.jsonl` (5000), `MEMO.md`, `SUBMISSION.md`  
-3. **Google form**
+## 1.3 What “winning” looks like in human terms
 
-## 1.3 Runtime contract
+They give everyone the same messy PDFs.
 
-```text
-docker run … <image> <folder_of_pdfs> <output_predictions_path>
-```
+Your program writes answers.
 
-## 1.4 One prediction row
+They compare your answers to the hidden correct answers and give you points.
 
-Fields (name, species, world, visa, sponsor, date, purpose, risk, fee) + `adjudication` + `confidence`.
+Three kinds of being right matter:
 
-## 1.5 Train vs val vs private
+1. **Did you copy the facts correctly?** (name, fee, visa…)  
+2. **Did you pick the right decision?** (approve / deny / review)  
+3. **When you said “I’m 90% sure,” were you actually right about 90% of the time?**
 
-| Split | N | Labels | Role |
-|-------|--:|:------:|------|
-| Train | 1,000 | public | Memo numbers + development |
-| Validation | 5,000 | hidden | PR predictions |
-| Private | held | hidden | Final rank |
+There is one nightmare mistake (you’ll see the letters **CFA** later):
 
-Hardcoding train/val IDs is career self-sabotage.
+> Saying **APPROVED** when the truth was **DENIED**.
 
-### Allowlist vs trap (know this cold)
+That’s like stamping “come on in” on someone who should have been blocked.
+Organizers hate it. Our team treated “never do that on the practice set” as
+a hard rule.
 
-- **Allowlist** = if cell ∈ table → **APPROVED**. Refused.  
-- **Trap blocklist** = if cell ∈ table → **never LC-APPROVED**. Shipped in v41. Helps if private reuses cells; hurts on novel silent-stamp CFA.
+## 1.4 The PDFs are mean on purpose
+
+These are not clean tax forms.
+
+The pages are designed to trick a lazy program:
+
+- ink **stamps** that don’t exist as copy-paste text,
+- fake “SAMPLE DENIAL” watermarks,
+- washed / damaged fee receipts,
+- little planted “answer key” text that lies if you trust it blindly.
+
+So if your program only “selects all text” from the PDF and believes it,
+it will fail. A serious program usually **turns each page into a picture**
+and **reads the picture** (like a human looking with their eyes). Chapter 3
+is entirely about that idea.
+
+## 1.5 What you have to turn in (homework metaphor)
+
+Think of three homework items. Miss one and you may not count as entered.
+
+### Homework A — Your public recipe book
+
+A public folder of code on GitHub (a website for sharing projects).
+
+It must include a **Dockerfile**: a recipe that builds a sealed mini-computer
+image with your program and tools already installed.
+
+When they run that image for scoring, they unplug the network on purpose.
+
+### Homework B — Your answer sheet for the big practice exam
+
+You open a **pull request** (PR) on the official contest GitHub project —
+basically: “please accept my submission folder.”
+
+Inside your folder you put:
+
+1. **`predictions.jsonl`** — 5,000 lines of answers (one line per practice case)  
+2. **`MEMO.md`** — a short write-up of what you built  
+3. **`SUBMISSION.md`** — links + claimed practice score  
+
+(`jsonl` just means “each line is one small structured answer.”)
+
+### Homework C — A Google form
+
+They also want a form filled out. Code alone may not be enough.
+
+## 1.6 What “running your program” means (still dumbo)
+
+They do something like:
+
+> “Here’s a folder full of PDFs. Write your answers into this output file. Go.”
+
+Your sealed program must:
+
+1. read every PDF in the folder,
+2. write one answer per case,
+3. stop.
+
+No human clicking. No internet. No “let me download a smarter model real quick.”
+
+## 1.7 Practice homework vs the real final exam
+
+They don’t only have one pile of PDFs.
+
+| Pile | How many | Do you see the correct answers? | What it’s for |
+|------|--------:|----------------------------------|---------------|
+| **Train** | 1,000 | Yes | Practice at home. This is where you measure “138 / 150.” |
+| **Validation** | 5,000 | No | The big practice exam answers you put in the PR |
+| **Private** | Hidden | No | The real final grade / who ranks #1 |
+
+**Important life lesson:** memorizing the 1,000 practice PDFs (or hardcoding
+their IDs) can fake a high homework score and then die on the final.
+Later chapters talk about “cheat sheets” we refused.
+
+You do **not** need those cheat-sheet words yet. Just remember:
+
+> High practice score is only impressive if the method should still work on
+> PDFs you’ve never seen.
+
+## 1.8 What you should feel after this chapter
+
+You should be able to tell a friend:
+
+> “8090 is hiring with a Men-in-Black paperwork contest. You write a program
+> that reads tricky PDF applications and decides approve, deny, or ask a
+> human — with no internet while they grade you. They score you out of 150.
+> The worst mistake is approving someone who should have been denied.”
+
+If you can say that, you’re ready for **Chapter 2: Scoring** (how the
+150 points are actually counted).
 
 * * *
 
