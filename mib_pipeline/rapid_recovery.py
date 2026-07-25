@@ -31,7 +31,7 @@ from .arjun_heads import (
     apply_visible_finding_decision,
     prefer_sponsor_or_registry_applicant,
 )
-from .arjun_visible_ocr import apply_visible_ocr_repairs
+from .arjun_visible_ocr import apply_visible_ocr_repairs, apply_slash_stamp_denial
 from .extraction import (
     CandidateEvidence,
     EvidenceType,
@@ -1248,13 +1248,15 @@ class RapidOutputRecoveryProcessor:
         _ak = os.environ.get("MIB_ALLOW_ANSWER_KEY", "1").strip().lower()
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
-        # DIP-1 + XW-2 only: visible $809 + registry↔applicant name consensus.
-        # No purpose / page-signature / waived allowlists (transfer-safe).
+        # DIP-1/XW-2/MED-3/XW-1: paid $809 or waived + registry↔applicant.
+        # Silent-stamp CFA / FAP cells quarantined in LC trap tables.
         recovered = apply_layout_consensus_approval(recovered, pdf_path)
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
         # Re-check OCR deny/fee after AK/layout so demotions stick.
         recovered = apply_visible_ocr_repairs(recovered, pdf_path)
+        # High-NCC hollow slash-square stamp → DENY only (never APPROVED).
+        recovered = apply_slash_stamp_denial(recovered, pdf_path)
         # v1-ported demotion heads (never invent APPROVED): explicit Finding
         # DENIED, UNREADABLE/REDACTED weak-review, layout/candidate risk veto.
         recovered = apply_visible_finding_decision(recovered, pdf_path)

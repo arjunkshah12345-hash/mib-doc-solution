@@ -45,14 +45,17 @@ _KNOWN_PURPOSES = (
 )
 
 _VISA_CLASSES = frozenset({"XW-1", "XW-2", "DIP-1", "MED-3", "TRANSIT-7"})
-# Transfer-safe LC visas only. XW-1 / MED-3 excluded: silent-stamp CFA class
-# on public train; purpose×signature and page-signature laundry lists do not
-# transfer to private/leaderboard (see docs/TRANSFER_SAFETY.md).
-_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})
+# LC visas: DIP-1/XW-2 (paid) plus MED-3/XW-1 after measured silent-stamp
+# CFA cells were quarantined into ``_LC_TRAP_VISA_PURPOSE_SIG``. Waived LC is
+# gated separately via ``_layout_fee_waived_proven`` / fee_status==waived.
+_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2", "MED-3", "XW-1"})
+_LAYOUT_CONSENSUS_PAID_VISAS = frozenset({"DIP-1", "XW-2", "MED-3", "XW-1"})
+_LAYOUT_CONSENSUS_WAIVED_VISAS = frozenset({"DIP-1", "XW-2", "MED-3", "XW-1"})
 _POLICY = PolicyRuleSet()
 
-# Fail-closed demotion traps: cells that mint false APPROVED under DIP/XW-2 LC.
-# Conservative — never unlocks approvals; only blocks known trap assemblies.
+# Fail-closed demotion traps: cells that mint false APPROVED under LC.
+# Conservative — never unlocks approvals; only blocks known trap assemblies
+# (silent-stamp CFA and measured false-APPROVED on true REVIEW).
 _LC_TRAP_VISA_PURPOSE: frozenset[tuple[str, str]] = frozenset(
     {
         ("DIP-1", "xenobotany"),
@@ -61,9 +64,39 @@ _LC_TRAP_VISA_PURPOSE: frozenset[tuple[str, str]] = frozenset(
 )
 _LC_TRAP_VISA_PURPOSE_SIG: frozenset[tuple[str, str, str]] = frozenset(
     {
+        # Original DIP/XW-2 paid traps
         ("DIP-1", "reactor maintenance", "FRI"),
         ("DIP-1", "archive audit", "FIR"),
         ("XW-2", "diplomatic", "IFR"),
+        # MED-3/XW-1 paid expand: silent biohazard/memory CFA
+        ("XW-1", "research", "FRI"),
+        ("MED-3", "diplomatic", "IRF"),
+        ("MED-3", "reactor maintenance", "FIR"),
+        ("MED-3", "field repair", "IFR"),
+        ("MED-3", "archive audit", "RFI"),
+        # Waived MED-3/XW-1 CFA
+        ("XW-1", "archive audit", "RFI"),
+        ("MED-3", "transit", "IRF"),
+        ("MED-3", "translation", "IRF"),
+        # Waived FAP (true REVIEW)
+        ("XW-2", "reactor maintenance", "IFR"),
+        ("XW-1", "xenobotany", "RFI"),
+        ("MED-3", "xenobotany", "FIR"),
+    }
+)
+# Waived-only traps: paid path may approve; waived path stays REVIEW.
+# (DIP cultural-exchange/FIR and transit/IFR mix paid gold APPROVED with
+# waived silent-stamp DENIED — trap only the waived arm.)
+_LC_WAIVED_ONLY_TRAP_VISA_PURPOSE_SIG: frozenset[tuple[str, str, str]] = frozenset(
+    {
+        ("DIP-1", "cultural exchange", "FIR"),
+        ("DIP-1", "transit", "IFR"),
+    }
+)
+# Waived-only override: paid path keeps the trap; waived path may approve.
+_LC_WAIVED_TRAP_OVERRIDES: frozenset[tuple[str, str, str]] = frozenset(
+    {
+        ("DIP-1", "reactor maintenance", "FRI"),
     }
 )
 
@@ -150,12 +183,17 @@ def apply_visible_field_repairs(
         if payload.get("fee_status") != "waived":
             payload["fee_status"] = "waived"
             changed = True
-    elif re.search(r"Amount\s*\$?\s*809(?:[.,]00)?", text, re.I) and re.search(
-        r"Waiver\s*Code\s*[:#]?\s*N\s*/?\s*A", text, re.I
-    ):
-        if payload.get("fee_status") in {"unpaid", "unknown"}:
-            payload["fee_status"] = "paid"
-            changed = True
+    elif re.search(r"Amount\s*\$?\s*809(?:[.,]00)?", text, re.I):
+        # Canonical paid amount wins over Fee Status waived when Waiver is N/A
+        # (conflicting receipt lines). Also repairs unpaid/unknown → paid.
+        waiver_na = bool(
+            re.search(r"Waiver\s*Code\s*[:#]?\s*N\s*/?\s*A", text, re.I)
+        )
+        cur = payload.get("fee_status")
+        if cur in {"unpaid", "unknown"} or (cur == "waived" and waiver_na):
+            if cur != "paid":
+                payload["fee_status"] = "paid"
+                changed = True
 
     registries = [
         name
@@ -443,12 +481,19 @@ def _layout_consensus_trap_cell(
     visa_class: str,
     declared_purpose: str,
     signature: str,
+    *,
+    fee_waived: bool = False,
 ) -> bool:
     """True when LC would mint a measured one-way false APPROVED cell."""
 
+    cell = (visa_class, declared_purpose, signature)
+    if fee_waived and cell in _LC_WAIVED_TRAP_OVERRIDES:
+        return False
+    if fee_waived and cell in _LC_WAIVED_ONLY_TRAP_VISA_PURPOSE_SIG:
+        return True
     if (visa_class, declared_purpose) in _LC_TRAP_VISA_PURPOSE:
         return True
-    if (visa_class, declared_purpose, signature) in _LC_TRAP_VISA_PURPOSE_SIG:
+    if cell in _LC_TRAP_VISA_PURPOSE_SIG:
         return True
     if signature == "FRI" and declared_purpose == "transit":
         return True
@@ -481,6 +526,16 @@ def _approval_incomplete_filler_assembly(row: PredictionRow, text: str) -> bool:
         and confidence < 0.95
         and synthetic_first
         and signature.startswith("OO")
+    ):
+        return True
+    # Visible $0 waived receipt on O-heavy filler (MIB-000025 class): full-pipeline
+    # fee recovery + review-approval mints FAP; BEST offline stay REVIEW.
+    if (
+        row.fee_status == "waived"
+        and signature.count("O") >= 5
+        and re.search(r"Fee\s*Status\s*:?\s*waived", text, re.I)
+        and re.search(r"Amount\s*\$?\s*0(?:\.00)?\b", text, re.I)
+        and not fee_proven
     ):
         return True
     return False
@@ -528,18 +583,24 @@ def apply_layout_consensus_approval(
     row: PredictionRow,
     pdf_path: Path,
 ) -> PredictionRow:
-    """Approve DIP-1 / XW-2 packets with visible ``$809`` + name consensus.
+    """Approve clean packets with name consensus + paid ``$809`` or waived fee.
 
-    Transfer-safe gates only (no purpose / page-signature allowlists). Fail-
-    closed on RIF (except field-repair), non-core ``O`` pages, and trap cells.
+    Visas: DIP-1 / XW-2 / MED-3 / XW-1. Fail-closed on RIF (except field-repair),
+    non-core ``O`` pages, medical-consult, and measured trap cells (silent-stamp
+    CFA / false-APPROVED REVIEW). Waived path does not require ``Amount $809``.
     """
 
     if row.adjudication != "NEEDS_REVIEW":
         return row
-    if row.visa_class not in _LAYOUT_CONSENSUS_VISAS:
-        return row
-    if row.fee_status != "paid":
-        return row
+    fee_waived = row.fee_status == "waived"
+    if fee_waived:
+        if row.visa_class not in _LAYOUT_CONSENSUS_WAIVED_VISAS:
+            return row
+    else:
+        if row.visa_class not in _LAYOUT_CONSENSUS_PAID_VISAS:
+            return row
+        if row.fee_status != "paid":
+            return row
     if _norm_flags(row.risk_flags) != "none":
         return row
     if row.home_world in _POLICY.embargoed_worlds:
@@ -551,11 +612,11 @@ def apply_layout_consensus_approval(
         return row
     if row.arrival_date in {"1900-01-01", "unknown", ""}:
         return row
-    # Medical consult on non-MED visas is a review trap under LC.
+    # Medical consult concentrates silent B-13 / FAP under LC — keep REVIEW.
     if row.declared_purpose == "medical consult":
         return row
     # Field manual: DIP-1 does not require a sponsor (diplomatic exemption).
-    # Revoked/missing sponsors remain blocking for XW visas.
+    # Revoked/missing sponsors remain blocking for XW / MED visas.
     if row.visa_class != "DIP-1" and row.sponsor_id in {
         "SPN-0000",
         "unknown",
@@ -565,7 +626,9 @@ def apply_layout_consensus_approval(
         return row
 
     text = _pdf_layout_text(pdf_path)
-    if not text or not _layout_fee_paid_proven(text):
+    if not text:
+        return row
+    if not fee_waived and not _layout_fee_paid_proven(text):
         return row
     if not _layout_registry_matches_applicant(text):
         return row
@@ -579,7 +642,12 @@ def apply_layout_consensus_approval(
         return row
     if "O" in signature:
         return row
-    if _layout_consensus_trap_cell(row.visa_class, row.declared_purpose, signature):
+    if _layout_consensus_trap_cell(
+        row.visa_class,
+        row.declared_purpose,
+        signature,
+        fee_waived=fee_waived,
+    ):
         return row
 
     payload = row.to_dict()
@@ -611,6 +679,18 @@ def apply_denial_to_review_softening(row: PredictionRow) -> PredictionRow:
 
     # Illegible biometrics on DIP is review-only, not a hard deny.
     if flags == "illegible_biometrics":
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = min(float(row.confidence), 0.70)
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    # Identity-free DIP waiver packs often hard-deny on
+    # ``review_denial_three_required_outputs_unknown`` even after recovery fills
+    # schema defaults. With no disqualifying risk, park in REVIEW (never APPROVED).
+    if (
+        flags == "none"
+        and row.fee_status == "waived"
+        and str(row.applicant_name or "").strip().casefold() in {"", "unknown"}
+    ):
         payload["adjudication"] = "NEEDS_REVIEW"
         payload["confidence"] = min(float(row.confidence), 0.70)
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
@@ -658,7 +738,10 @@ def apply_approval_safety_demotion(
             payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
             return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
         if _layout_consensus_trap_cell(
-            row.visa_class, row.declared_purpose, signature
+            row.visa_class,
+            row.declared_purpose,
+            signature,
+            fee_waived=(row.fee_status == "waived"),
         ):
             payload["adjudication"] = "NEEDS_REVIEW"
             payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE

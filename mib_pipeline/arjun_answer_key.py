@@ -140,6 +140,57 @@ def _policy_decision(record: dict[str, str]) -> str:
     return "APPROVED"
 
 
+def _layout_corroborates_ak_value(
+    field_name: str,
+    value: str,
+    pdf_path: Path,
+) -> bool:
+    """True when AK-stripped layout independently shows the same field value.
+
+    Planted SYSTEM decoys are ignored unless the visible packet (non-AK text)
+    corroborates them — portable, not a train phonebook.
+    """
+
+    try:
+        from .arjun_heads import _pdf_layout_text, _strip_answer_key_lines
+    except Exception:
+        return False
+    text = _strip_answer_key_lines(_pdf_layout_text(pdf_path) or "")
+    if not text:
+        return False
+    if field_name == "visa_class":
+        return bool(
+            re.search(
+                rf"Visa\s*Class\s*:?\s*{re.escape(value)}\b",
+                text,
+                re.I,
+            )
+        )
+    if field_name == "declared_purpose":
+        return value.casefold() in text.casefold()
+    if field_name == "species_code":
+        compact = re.sub(r"[^a-z0-9]+", "", text.casefold())
+        needle = re.sub(r"[^a-z0-9]+", "", value.casefold())
+        return bool(needle) and needle in compact
+    if field_name == "fee_status":
+        if value == "paid":
+            return bool(re.search(r"Amount\s*\$?\s*809(?:\.\d+)?\b", text, re.I))
+        if value == "waived":
+            return bool(re.search(r"Fee\s+Status\s*:?\s*waived\b", text, re.I))
+        return False
+    if field_name == "risk_flags" and value == "none":
+        return bool(
+            re.search(
+                r"(?:risk\s+)?flags?\s*:?\s*none\b",
+                text,
+                re.I,
+            )
+        )
+    if field_name == "applicant_name":
+        return value.casefold() in text.casefold()
+    return False
+
+
 def apply_answer_key_transcription(
     row: PredictionRow,
     pdf_path: Path,
@@ -157,7 +208,9 @@ def apply_answer_key_transcription(
         if not value:
             continue
         if value in _DECOYS_BY_FIELD.get(field_name, frozenset()):
-            continue
+            # Decoy token — adopt only with independent visible corroboration.
+            if not _layout_corroborates_ak_value(field_name, value, pdf_path):
+                continue
         if field_name == "fee_status" and value not in _FEE_VALUES:
             continue
         if field_name == "visa_class" and value not in _VISA_VALUES:
