@@ -2,17 +2,14 @@
 
 **Shipped (live):** **138.086 / 150 · CFA = 0 · FAP = 0** (v41)  
 **Breakdown:** Extraction **46.43** · Classification **73.79** · Calibration **17.86**  
-**APPROVED precision:** **219 / 219** (never false-approved DENIED or REVIEW on public train)  
-**Repos:** https://github.com/arjunkshah12345-hash/mib-doc-solution (`798ad22`)  
-**PR:** https://github.com/8090-inc/mib-doc-challenge/pull/15 (`submit-v27` @ `f06ab7a`)  
-**Status:** shipped — **waiting** on private / organizers  
+**Repos:** https://github.com/arjunkshah12345-hash/mib-doc-solution  
+**PR:** https://github.com/8090-inc/mib-doc-challenge/pull/15  
 
-This is the whole story from an empty folder to the live 138 ship: what the contest is, how scoring works, how the system is built, and **exactly how we improved each time the score moved**.
+**How to read:** start at **§1 The contest**. Learn the game, then scoring, then the system. The climb (how we improved each time) comes **after** you know what the numbers mean.
 
 * * *
 # Contents
 
-0. [The climb — how we improved each time](#0-the-climb--how-we-improved-each-time)
 1. [The contest](#1-the-contest)
 2. [Scoring as a weapon](#2-scoring-as-a-weapon)
 3. [Why PDF text is a lie](#3-why-pdf-text-is-a-lie)
@@ -20,21 +17,233 @@ This is the whole story from an empty folder to the live 138 ship: what the cont
 5. [Architecture](#5-architecture)
 6. [Owned heads — every lever](#6-owned-heads--every-lever)
 7. [Docker & submission contract](#7-docker--submission-contract)
-8. [The chronicle — every score jump (detail)](#8-the-chronicle--every-score-jump-detail)
-9. [What we refused](#9-what-we-refused)
-10. [Competitors, answer keys, optics](#10-competitors-answer-keys-optics)
-11. [Failure modes that still own us](#11-failure-modes-that-still-own-us)
-12. [Ship posture — hold 138 & wait](#12-ship-posture--hold-138--wait)
-13. [How to defend this in a room](#13-how-to-defend-this-in-a-room)
-14. [Glossary](#14-glossary)
-15. [Deep appendices](#deep-appendices)
+8. [The climb — how we improved each time](#8-the-climb--how-we-improved-each-time)
+9. [The chronicle — every score jump (detail)](#9-the-chronicle--every-score-jump-detail)
+10. [What we refused](#10-what-we-refused)
+11. [Competitors, answer keys, optics](#11-competitors-answer-keys-optics)
+12. [Failure modes that still own us](#12-failure-modes-that-still-own-us)
+13. [Ship posture — hold 138 & wait](#13-ship-posture--hold-138--wait)
+14. [How to defend this in a room](#14-how-to-defend-this-in-a-room)
+15. [Glossary](#15-glossary)
+16. [Deep appendices](#deep-appendices)
 
 * * *
-# 0. The climb — how we improved each time
+# 1. The contest
 
-Read this first. Everything else is backup.
+## 1.0 One-sentence version
 
-## 0.1 Scoreboard (public train / 150, CFA=0 unless noted)
+**8090 is hiring.** The costume is Men-in-Black alien paperwork. The real test: write a program that reads messy PDFs and decides APPROVED / DENIED / NEEDS_REVIEW — offline, CPU-only, without wrongly approving dangerous cases.
+
+## 1.1 Costume vs skill
+
+| Phrase | Meaning |
+|---|---|
+| **8090** | Organizers / hiring contest |
+| **Packet** | One multi-page PDF case |
+| **Adversarial** | Decoys, silent stamps, washed receipts, planted SYSTEM “answer keys” |
+| **Offline** | Scoring image: `--network none` — no ChatGPT, no cloud OCR |
+
+## 1.2 What you hand in
+
+1. **Public solution repo** with `Dockerfile` (recipe book) — ours: `mib-doc-solution`  
+2. **Challenge PR** under `submissions/<user>/`: `predictions.jsonl` (5000), `MEMO.md`, `SUBMISSION.md`  
+3. **Google form**
+
+## 1.3 Runtime contract
+
+```text
+docker run … <image> <folder_of_pdfs> <output_predictions_path>
+```
+
+## 1.4 One prediction row
+
+Fields (name, species, world, visa, sponsor, date, purpose, risk, fee) + `adjudication` + `confidence`.
+
+## 1.5 Train vs val vs private
+
+| Split | N | Labels | Role |
+|-------|--:|:------:|------|
+| Train | 1,000 | public | Memo numbers + development |
+| Validation | 5,000 | hidden | PR predictions |
+| Private | held | hidden | Final rank |
+
+Hardcoding train/val IDs is career self-sabotage.
+
+### Allowlist vs trap (know this cold)
+
+- **Allowlist** = if cell ∈ table → **APPROVED**. Refused.  
+- **Trap blocklist** = if cell ∈ table → **never LC-APPROVED**. Shipped in v41. Helps if private reuses cells; hurts on novel silent-stamp CFA.
+
+* * *
+
+# 2. Scoring as a weapon
+
+Total **/150** = extraction **/50** + classification **/80** + calibration **/20**.
+
+## 2.1 Classification payoffs (per case, max raw 8)
+
+| Truth → Pred | Raw |
+|--------------|----:|
+| Match | **8** |
+| → NEEDS_REVIEW | **2** |
+| True REVIEW → wrong non-REVIEW | **1** |
+| True DENIED → APPROVED | **−4** (**CFA**) |
+| Other wrong | **0** |
+
+- REVIEW → correct APPROVED/DENIED: **+6 raw ≈ +0.06** on /150.  
+- ~40 clean recovers ≈ **+2.4** → the 135.56→138 arithmetic.  
+- One CFA: −4 raw **and** integrity poison.
+
+## 2.2 Calibration
+
+Brier `(confidence − 1{correct})²`.  
+Cal ≈ `20 × max(0, 1 − 2 × mean_Brier)`.  
+v41 cal **17.86** via OOF blend **0.45** — **labels frozen**.
+
+## 2.3 CFA hard gate
+
+Public train: **CFA = 0**, **FAP = 0**, **219/219** APPROVED precision (v41).
+
+* * *
+
+# 3. Why PDF text is a lie
+
+Packets mix scans, ink stamps with **no selectable text**, strike-throughs, washed receipts, planted SYSTEM spans.
+
+**Embedded PDF text is lowest trust.** Render pages → OCR images (**render-first**).
+
+| Naive idea | Death |
+|------------|-------|
+| `pdftotext` + regex | Silent stamps, decoys |
+| risk=none ⇒ approve | Silence ≠ clearance |
+| Cloud VLM | Forbidden |
+| Max train at all costs | Laundry → private collapse |
+
+* * *
+
+# 4. Field manual & precedence
+
+Implement **their** manual. **Fail-closed:** ambiguity → NEEDS_REVIEW, never APPROVED.
+
+Precedence (high→low): adjudicatory stamps / signed notes → biometric/registry → intake fields → sponsor letters → planted text.
+
+- Visible disqualifying risks block APPROVED.  
+- Silent risk is the CFA factory.  
+- `fee_status=unknown` never unlocks APPROVED.  
+- MED-3/XW-1 LC without traps → 11 CFA (measured).
+
+* * *
+
+# 5. Architecture
+
+Vendor base: **strobl/mib-doc-solution** (MIT). Our re-run: **130.26**, CFA=0.
+
+```text
+PDF
+ ├─ rasterize (pypdfium2)
+ ├─ Tesseract sparse OCR
+ ├─ RapidOCR — UNKNOWN fields only
+ ├─ resolve conflicts
+ ├─ adjudicate (field manual)
+ └─ Arjun post-process
+      ├─ visible field repairs
+      ├─ gated visible OCR (fee / Finding / risk)
+      ├─ AK field transcription (layout-corroborated; never adj)
+      ├─ layout-consensus APPROVED (4 visas + fee proof + names + traps)
+      ├─ Finding DENIED / NEEDS_REVIEW / Registry EMBARGO
+      ├─ damage / risk / filler / trap demotions
+      ├─ policy softens (never invent APPROVED)
+      ├─ TRANSIT-7 hard deny if wrongly APPROVED
+      └─ OOF confidence blend (cal only; blend=0.45)
+ → JSONL
+```
+
+### Five commandments
+
+1. Render / visible-evidence first  
+2. Fail closed — silence is not clearance  
+3. CFA = 0 hard gate  
+4. Identity-free rules — no case-ID tables, no `train_labels` at inference  
+5. Attribute vendors — credit strobl; own the heads
+
+### Module map
+
+| Module | Job |
+|--------|-----|
+| `solution.py` / `Dockerfile` / `run.sh` | Entry |
+| `extraction.py` / `resolution.py` / `adjudication.py` | Core stack |
+| `rapid_recovery.py` | RapidOCR + head wiring |
+| `arjun_heads.py` | LC, demotions, Finding, EMBARGO, traps |
+| `arjun_answer_key.py` | SYSTEM **fields only** + layout corroboration |
+| `arjun_visible_ocr.py` | Selective high-value OCR; fee clobber guard |
+| `arjun_confidence.py` | OOF blend |
+| `policy_exceptions.json` | Empty `exceptions: []` |
+
+* * *
+
+# 6. Owned heads — every lever
+
+### 6.1 Visible field repairs
+Layout repairs fee/name/visa/purpose/sponsor when cues are visible. Never creates APPROVED alone.
+
+### 6.2 Layout-consensus APPROVED (LC)
+Promote REVIEW→APPROVED only if:
+
+- visa ∈ `{DIP-1, XW-2, MED-3, XW-1}`  
+- fee proven (`paid` + visible `$809`, or waived path)  
+- unique registry name == applicant name  
+- risk none; world not wrongly embargoed  
+- arrival not placeholder  
+- not medical-consult under silent B-13  
+- page signature: no non-core `O`; `RIF` only for field repair  
+- **not** in trap frozensets (visa×purpose / ×sig / waived-only)
+
+Traps **block** — they never unlock APPROVED.
+
+### 6.3 Fee geometry (v41)
+`Amount $809` + `Waiver Code: N/A` → `paid`. OCR cannot clobber with waived.
+
+### 6.4 Answer-key fields
+SYSTEM span fields only; decoys filtered; **layout must corroborate**; never key adjudication. `MIB_ALLOW_ANSWER_KEY=0` kills it.
+
+### 6.5 Finding / EMBARGO
+Exact Finding DENIED / NEEDS_REVIEW; Registry EMBARGO → planetary_embargo + DENIED.
+
+### 6.6 Safety demotions
+Fee unknown; filler; RIF/O; visible risk; UNREADABLE/REDACTED damage on APPROVED.
+
+### 6.7 Softens (never invent APPROVED)
+`rescinded_denial` → REVIEW; DIP + `illegible_biometrics` → REVIEW.
+
+### 6.8 OOF confidence blend
+Key: `(adjudication, fee_known, missing_field_count)`. Blend **0.45**. Calibration only.
+
+* * *
+
+# 7. Docker & submission contract
+
+- `--network none`, pinned `requirements.lock`, cal artifacts baked in  
+- ~4 CPU / 8 GiB; ~2–6 s/PDF with 4 workers  
+
+**PR files (live):**
+
+| File | Content |
+|------|---------|
+| `predictions.jsonl` | 5000/5000, validator clean |
+| `SUBMISSION.md` | **138.086**, CFA=0 |
+| `MEMO.md` | Approach + failure modes |
+
+**Val SHA-256:** `ab5e5ea15df059dff2d39447e889637720227051d9fa3e181103229f07fa3d51`
+
+Account: **`arjunkshah12345-hash`**. Solution repo name: **`mib-doc-solution`** (not local folder `mib-challenge-v2`, not `mib-challenge-v1`).
+
+* * *
+
+# 8. The climb — how we improved each time
+
+Now that you know the contest and the system, here is every score jump.
+
+## 8.1 Scoreboard (public train / 150, CFA=0 unless noted)
 
 | Step | Score | What changed | Why it worked | Transfer? |
 |-----:|------:|--------------|---------------|-----------|
@@ -60,7 +269,7 @@ Read this first. Everything else is backup.
 
 **Ablation that defines the bet:** LC expand **without** traps → **136.757** but **11 CFA / 4 FAP**. Traps are load-bearing for CFA=0.
 
-## 0.2 The improvement story in plain English
+## 8.2 The improvement story in plain English
 
 ### Phase A — Stand up something real (→ 133.60)
 
@@ -111,7 +320,7 @@ Shipped 138 = **different polarity**:
 
 **Why we didn’t roll back to 135.56:** Abhishek is too close. Rollback hands him an easy private overtake. We accept trap-transfer risk for win EV.
 
-## 0.3 Confusion: v38 → v41 (what the +2.5 bought)
+## 8.3 Confusion: v38 → v41 (what the +2.5 bought)
 
 | | APPROVED | DENIED | NEEDS_REVIEW |
 |--|--------:|-------:|-------------:|
@@ -122,226 +331,23 @@ Shipped 138 = **different polarity**:
 v38 had **186** correct APPROVED and **97** true-AP stuck in REVIEW.  
 v41 recovered **+33** true APPROVED; CFA still 0; FAP still 0.
 
-## 0.4 One-sentence pitch
+## 8.4 One-sentence pitch
 
 > Offline render-first pipeline, fail-closed field manual, **138.086/150 with zero CFA**. We refuse APPROVED allowlists; we shipped LC expand behind trap **blocklists** plus portable fee/AK/cal — because the closest rival is ~135.3 and rollback loses the race.
 
 * * *
-# 1. The contest
 
-## 1.0 One-sentence version
+# 9. The chronicle — every score jump (detail)
 
-**8090 is hiring.** The costume is Men-in-Black alien paperwork. The real test: write a program that reads messy PDFs and decides APPROVED / DENIED / NEEDS_REVIEW — offline, CPU-only, without wrongly approving dangerous cases.
-
-## 1.1 Costume vs skill
-
-| Phrase | Meaning |
-|---|---|
-| **8090** | Organizers / hiring contest |
-| **Packet** | One multi-page PDF case |
-| **Adversarial** | Decoys, silent stamps, washed receipts, planted SYSTEM “answer keys” |
-| **Offline** | Scoring image: `--network none` — no ChatGPT, no cloud OCR |
-
-## 1.2 What you hand in
-
-1. **Public solution repo** with `Dockerfile` (recipe book) — ours: `mib-doc-solution`  
-2. **Challenge PR** under `submissions/<user>/`: `predictions.jsonl` (5000), `MEMO.md`, `SUBMISSION.md`  
-3. **Google form**
-
-## 1.3 Runtime contract
-
-```text
-docker run … <image> <folder_of_pdfs> <output_predictions_path>
-```
-
-## 1.4 One prediction row
-
-Fields (name, species, world, visa, sponsor, date, purpose, risk, fee) + `adjudication` + `confidence`.
-
-## 1.5 Train vs val vs private
-
-| Split | N | Labels | Role |
-|-------|--:|:------:|------|
-| Train | 1,000 | public | Memo numbers + development |
-| Validation | 5,000 | hidden | PR predictions |
-| Private | held | hidden | Final rank |
-
-Hardcoding train/val IDs is career self-sabotage.
-
-### Allowlist vs trap (know this cold)
-
-- **Allowlist** = if cell ∈ table → **APPROVED**. Refused.  
-- **Trap blocklist** = if cell ∈ table → **never LC-APPROVED**. Shipped in v41. Helps if private reuses cells; hurts on novel silent-stamp CFA.
-
-* * *
-# 2. Scoring as a weapon
-
-Total **/150** = extraction **/50** + classification **/80** + calibration **/20**.
-
-## 2.1 Classification payoffs (per case, max raw 8)
-
-| Truth → Pred | Raw |
-|--------------|----:|
-| Match | **8** |
-| → NEEDS_REVIEW | **2** |
-| True REVIEW → wrong non-REVIEW | **1** |
-| True DENIED → APPROVED | **−4** (**CFA**) |
-| Other wrong | **0** |
-
-- REVIEW → correct APPROVED/DENIED: **+6 raw ≈ +0.06** on /150.  
-- ~40 clean recovers ≈ **+2.4** → the 135.56→138 arithmetic.  
-- One CFA: −4 raw **and** integrity poison.
-
-## 2.2 Calibration
-
-Brier `(confidence − 1{correct})²`.  
-Cal ≈ `20 × max(0, 1 − 2 × mean_Brier)`.  
-v41 cal **17.86** via OOF blend **0.45** — **labels frozen**.
-
-## 2.3 CFA hard gate
-
-Public train: **CFA = 0**, **FAP = 0**, **219/219** APPROVED precision (v41).
-
-* * *
-# 3. Why PDF text is a lie
-
-Packets mix scans, ink stamps with **no selectable text**, strike-throughs, washed receipts, planted SYSTEM spans.
-
-**Embedded PDF text is lowest trust.** Render pages → OCR images (**render-first**).
-
-| Naive idea | Death |
-|------------|-------|
-| `pdftotext` + regex | Silent stamps, decoys |
-| risk=none ⇒ approve | Silence ≠ clearance |
-| Cloud VLM | Forbidden |
-| Max train at all costs | Laundry → private collapse |
-
-* * *
-# 4. Field manual & precedence
-
-Implement **their** manual. **Fail-closed:** ambiguity → NEEDS_REVIEW, never APPROVED.
-
-Precedence (high→low): adjudicatory stamps / signed notes → biometric/registry → intake fields → sponsor letters → planted text.
-
-- Visible disqualifying risks block APPROVED.  
-- Silent risk is the CFA factory.  
-- `fee_status=unknown` never unlocks APPROVED.  
-- MED-3/XW-1 LC without traps → 11 CFA (measured).
-
-* * *
-# 5. Architecture
-
-Vendor base: **strobl/mib-doc-solution** (MIT). Our re-run: **130.26**, CFA=0.
-
-```text
-PDF
- ├─ rasterize (pypdfium2)
- ├─ Tesseract sparse OCR
- ├─ RapidOCR — UNKNOWN fields only
- ├─ resolve conflicts
- ├─ adjudicate (field manual)
- └─ Arjun post-process
-      ├─ visible field repairs
-      ├─ gated visible OCR (fee / Finding / risk)
-      ├─ AK field transcription (layout-corroborated; never adj)
-      ├─ layout-consensus APPROVED (4 visas + fee proof + names + traps)
-      ├─ Finding DENIED / NEEDS_REVIEW / Registry EMBARGO
-      ├─ damage / risk / filler / trap demotions
-      ├─ policy softens (never invent APPROVED)
-      ├─ TRANSIT-7 hard deny if wrongly APPROVED
-      └─ OOF confidence blend (cal only; blend=0.45)
- → JSONL
-```
-
-### Five commandments
-
-1. Render / visible-evidence first  
-2. Fail closed — silence is not clearance  
-3. CFA = 0 hard gate  
-4. Identity-free rules — no case-ID tables, no `train_labels` at inference  
-5. Attribute vendors — credit strobl; own the heads
-
-### Module map
-
-| Module | Job |
-|--------|-----|
-| `solution.py` / `Dockerfile` / `run.sh` | Entry |
-| `extraction.py` / `resolution.py` / `adjudication.py` | Core stack |
-| `rapid_recovery.py` | RapidOCR + head wiring |
-| `arjun_heads.py` | LC, demotions, Finding, EMBARGO, traps |
-| `arjun_answer_key.py` | SYSTEM **fields only** + layout corroboration |
-| `arjun_visible_ocr.py` | Selective high-value OCR; fee clobber guard |
-| `arjun_confidence.py` | OOF blend |
-| `policy_exceptions.json` | Empty `exceptions: []` |
-
-* * *
-# 6. Owned heads — every lever
-
-### 6.1 Visible field repairs
-Layout repairs fee/name/visa/purpose/sponsor when cues are visible. Never creates APPROVED alone.
-
-### 6.2 Layout-consensus APPROVED (LC)
-Promote REVIEW→APPROVED only if:
-
-- visa ∈ `{DIP-1, XW-2, MED-3, XW-1}`  
-- fee proven (`paid` + visible `$809`, or waived path)  
-- unique registry name == applicant name  
-- risk none; world not wrongly embargoed  
-- arrival not placeholder  
-- not medical-consult under silent B-13  
-- page signature: no non-core `O`; `RIF` only for field repair  
-- **not** in trap frozensets (visa×purpose / ×sig / waived-only)
-
-Traps **block** — they never unlock APPROVED.
-
-### 6.3 Fee geometry (v41)
-`Amount $809` + `Waiver Code: N/A` → `paid`. OCR cannot clobber with waived.
-
-### 6.4 Answer-key fields
-SYSTEM span fields only; decoys filtered; **layout must corroborate**; never key adjudication. `MIB_ALLOW_ANSWER_KEY=0` kills it.
-
-### 6.5 Finding / EMBARGO
-Exact Finding DENIED / NEEDS_REVIEW; Registry EMBARGO → planetary_embargo + DENIED.
-
-### 6.6 Safety demotions
-Fee unknown; filler; RIF/O; visible risk; UNREADABLE/REDACTED damage on APPROVED.
-
-### 6.7 Softens (never invent APPROVED)
-`rescinded_denial` → REVIEW; DIP + `illegible_biometrics` → REVIEW.
-
-### 6.8 OOF confidence blend
-Key: `(adjudication, fee_known, missing_field_count)`. Blend **0.45**. Calibration only.
-
-* * *
-# 7. Docker & submission contract
-
-- `--network none`, pinned `requirements.lock`, cal artifacts baked in  
-- ~4 CPU / 8 GiB; ~2–6 s/PDF with 4 workers  
-
-**PR files (live):**
-
-| File | Content |
-|------|---------|
-| `predictions.jsonl` | 5000/5000, validator clean |
-| `SUBMISSION.md` | **138.086**, CFA=0 |
-| `MEMO.md` | Approach + failure modes |
-
-**Val SHA-256:** `ab5e5ea15df059dff2d39447e889637720227051d9fa3e181103229f07fa3d51`
-
-Account: **`arjunkshah12345-hash`**. Solution repo name: **`mib-doc-solution`** (not local folder `mib-challenge-v2`, not `mib-challenge-v1`).
-
-* * *
-# 8. The chronicle — every score jump (detail)
-
-## 8.1 Era 0 — Empty repo
+## 9.1 Era 0 — Empty repo
 Read FIELD_MANUAL, EVALUATION, DOCKER_SUBMISSION. Profile decoys. Bootstrap render+OCR.  
 **Lesson:** Only `evaluate.py` numbers count.
 
-## 8.2 Era 1 — Strobl → 130.26
+## 9.2 Era 1 — Strobl → 130.26
 Vendor MIT render-first stack with attribution.  
 **Lesson:** Seniors reuse measured baselines.
 
-## 8.3 Era 2 — First ships → 133.60 (v27–v30)
+## 9.3 Era 2 — First ships → 133.60 (v27–v30)
 
 | Ver | Score | Delta focus |
 |-----|------:|-------------|
@@ -353,18 +359,18 @@ Vendor MIT render-first stack with attribution.
 Owned stack: fee-unknown gate, DIP/XW-2 LC, fenced AK fields, RapidOCR fill-only, Docker bake.  
 Extr **46.44** / Cls **70.12** / Cal **17.04**.
 
-## 8.4 Era 3 — Tighten → ~135.4 (v32–v33)
+## 9.4 Era 3 — Tighten → ~135.4 (v32–v33)
 Demote false LC APs; Finding REVIEW; softens; registry regex fix.  
 **Lesson:** Stricter can raise score.
 
-## 8.5 Era 4 — Temptation → delete (v34–v35)
+## 9.5 Era 4 — Temptation → delete (v34–v35)
 Allowlist / signature laundry to 137.48. Probe CFA factory on visa expand. **Deleted.**  
 **Lesson:** Vanity train ≠ EV.
 
-## 8.6 Era 5 — Integrity 135.56 (v36–v38)
+## 9.6 Era 5 — Integrity 135.56 (v36–v38)
 Strip laundry → Finding DENIED/EMBARGO → OOF cal. **Prior conservative ship.** Still the rollback reference.
 
-## 8.7 Era 6 — 138 ship bet (v39–v41)
+## 9.7 Era 6 — 138 ship bet (v39–v41)
 
 | Slice vs v38 | ≈Δ | CFA |
 |--------------|---:|----:|
@@ -376,7 +382,7 @@ Strip laundry → Finding DENIED/EMBARGO → OOF cal. **Prior conservative ship.
 
 **Shipped.** Hold vs Abhishek ~135.30. Backfire odds: mild 25–40% / bad 15–25% / catastrophic 5–15% / first ~30–45%.
 
-## 8.8 Subsystem → points
+## 9.8 Subsystem → points
 
 | Subsystem | Role |
 |-----------|------|
@@ -394,7 +400,8 @@ Strip laundry → Finding DENIED/EMBARGO → OOF cal. **Prior conservative ship.
 | Purpose×sig **approve** lists | **Still deleted** |
 
 * * *
-# 9. What we refused
+
+# 10. What we refused
 
 | Temptation | Status |
 |------------|--------|
@@ -408,7 +415,8 @@ Strip laundry → Finding DENIED/EMBARGO → OOF cal. **Prior conservative ship.
 Shipped traps = **blocklists**, opposite polarity of allowlists. Drop them → 11 CFA.
 
 * * *
-# 10. Competitors, answer keys, optics
+
+# 11. Competitors, answer keys, optics
 
 | Entrant | ~Train | Note |
 |---------|-------:|------|
@@ -420,7 +428,8 @@ Shipped traps = **blocklists**, opposite polarity of allowlists. Drop them → 1
 AK optics: fields only, layout-corroborated, never adj, kill-switched. Own that in the memo.
 
 * * *
-# 11. Failure modes that still own us
+
+# 12. Failure modes that still own us
 
 1. Invisible deny / biohazard stamps (no OCR token)  
 2. **Novel** silent-stamp CFA cells on private (trap miss)  
@@ -433,7 +442,8 @@ AK optics: fields only, layout-corroborated, never adj, kill-switched. Own that 
 Raw red-pixel ratios don’t separate silent biohazard from clean APPROVED. Residual is **vision**, not another purpose table.
 
 * * *
-# 12. Ship posture — hold 138 & wait
+
+# 13. Ship posture — hold 138 & wait
 
 **Locked:** stay on v41 / 138.086. No rollback. No new laundry. No trap expansion.
 
@@ -442,7 +452,8 @@ Wait unless someone publishes clearly above ~138 with CFA=0, or organizers ask f
 Only real no-code safety lever = rollback (rejected). No env flag disables LC/traps.
 
 * * *
-# 13. How to defend this in a room
+
+# 14. How to defend this in a room
 
 **Whiteboard (3 min):** PDF → images → OCR → resolve → policy → LC/safety heads → confidence → JSONL. Pitch. One refusal. Stop.
 
@@ -457,7 +468,8 @@ Only real no-code safety lever = rollback (rejected). No env flag disables LC/tr
 | What’s next? | Wait. Stamp vision is the real residual. |
 
 * * *
-# 14. Glossary
+
+# 15. Glossary
 
 | Term | Meaning |
 |------|---------|
@@ -473,6 +485,7 @@ Only real no-code safety lever = rollback (rejected). No env flag disables LC/tr
 | JSONL | One JSON object per line |
 
 * * *
+
 # Deep appendices
 
 Technical expansions merged from the old dense volume. Same claims: **138.086 / CFA=0** shipped (v41); still refuse **allowlist** 138; trap blocklists are the ship bet.
