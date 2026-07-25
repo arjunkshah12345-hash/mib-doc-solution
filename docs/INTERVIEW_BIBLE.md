@@ -1,618 +1,678 @@
 # The MIB Doc Challenge Bible
 
-This book teaches one contest from zero. You do not need to know coding,
-PDFs, or “machine learning” yet. Each chapter only uses words the ones
-before it already explained.
+This book teaches one contest from **absolute zero**.
 
-**Where we ended up (you can ignore the numbers for now):** we built a
-program, entered the contest, and scored about **138 out of 150** on the
-practice set without making the worst kind of mistake. Details come later.
+You do not need to know coding, PDFs, GitHub, Docker, or “AI.”  
+Each chapter only uses ideas the earlier chapters already explained.  
+If a sentence feels dense, the next one usually unpacks it like you’re five.
 
-**How to read:** open **§1 The contest** and go in order. If a sentence
-feels dense, the next paragraph usually unpacks it in plain English.
+**Optional spoiler (ignore until Chapter 8):** we built a program, entered the
+contest, and scored about **138 out of 150** on the practice homework without
+making the worst kind of mistake. You will understand what that means after
+Chapters 1–2.
+
+**How to read:** start at Chapter 1. Go in order. Stop at any “you should feel”
+checkpoint and say it out loud. Advanced appendices at the end are optional.
 
 * * *
 # Contents
 
-1. [The contest](#1-the-contest)
-2. [Scoring as a weapon](#2-scoring-as-a-weapon)
-3. [Why PDF text is a lie](#3-why-pdf-text-is-a-lie)
-4. [Field manual & precedence](#4-field-manual--precedence)
-5. [Architecture](#5-architecture)
-6. [Owned heads — every lever](#6-owned-heads--every-lever)
-7. [Docker & submission contract](#7-docker--submission-contract)
-8. [The climb — how we improved each time](#8-the-climb--how-we-improved-each-time)
-9. [The chronicle — every score jump (detail)](#9-the-chronicle--every-score-jump-detail)
-10. [What we refused](#10-what-we-refused)
-11. [Competitors, answer keys, optics](#11-competitors-answer-keys-optics)
-12. [Failure modes that still own us](#12-failure-modes-that-still-own-us)
-13. [Ship posture — hold 138 & wait](#13-ship-posture--hold-138--wait)
-14. [How to defend this in a room](#14-how-to-defend-this-in-a-room)
-15. [Glossary](#15-glossary)
-16. [Deep appendices](#deep-appendices)
+1. [The contest](#1-the-contest) — what is this even?
+2. [Scoring](#2-scoring) — how they count points
+3. [Why PDFs lie](#3-why-pdfs-lie) — why “copy the text” fails
+4. [The rulebook](#4-the-rulebook) — how a clerk is supposed to decide
+5. [Our program, in English](#5-our-program-in-english) — the assembly line
+6. [Extra safety gadgets](#6-extra-safety-gadgets) — the parts we invented
+7. [How we hand it in](#7-how-we-hand-it-in) — the sealed box + homework
+8. [How we improved each time](#8-how-we-improved-each-time) — the climb
+9. [Same climb, more detail](#9-same-climb-more-detail)
+10. [Things we refused to do](#10-things-we-refused-to-do)
+11. [Who else is in the race](#11-who-else-is-in-the-race)
+12. [What still breaks](#12-what-still-breaks)
+13. [What we’re doing now](#13-what-were-doing-now) — waiting
+14. [If someone asks you in a room](#14-if-someone-asks-you-in-a-room)
+15. [Tiny dictionary](#15-tiny-dictionary)
+16. [Optional advanced appendices](#deep-appendices)
 
 * * *
 # 1. The contest
 
-*You are allowed to be confused. This chapter assumes you know nothing.*
+*You are allowed to feel dumb. This chapter assumes you know nothing.*
 
 ## 1.0 The whole thing in five lines
 
 1. A company called **8090** is running a public tryout (a hiring contest).
 2. The theme is fake **Men in Black** paperwork for aliens.
-3. Your job is **not** to pretend you’re an agent. Your job is to write a
+3. Your job is **not** to roleplay an agent. Your job is to write a
    **computer program** that reads those paperwork files.
 4. For each file, the program must say: **let them in**, **keep them out**,
    or **ask a human**.
 5. Whoever’s program does this best — under strict rules — looks hireable.
 
-That’s it. Everything else is detail.
+That’s the entire movie trailer. Everything else is detail.
 
-## 1.1 What’s actually happening (no jargon)
+## 1.1 What’s actually happening
 
-Imagine a stack of messy application forms. Each “application” is a
-**PDF** — a digital document, like a multi-page scan you open on a laptop.
+Imagine a stack of messy application forms. Each application is a **PDF** —
+a digital document, like a multi-page scan on a laptop.
 
-A real human immigration officer would:
+A real human clerk would:
 
 - skim the pages,
-- copy down facts (name, visa type, whether the fee was paid…),
+- copy down facts (name, visa type, did they pay the fee…),
 - look for danger marks (stamps, warnings),
 - decide: approve, deny, or send to a supervisor.
 
 8090 says: **build a robot clerk that does that job.**
 
-The alien / Men-in-Black story is costume. The skill they want is:
+The alien story is costume. The skill they want is:
 
 > Can you make software that reads hard documents carefully and decides
 > safely — without cheating and without calling the internet?
 
-## 1.2 Words you’ll see everywhere (said slowly)
+## 1.2 Words you’ll see (said slowly)
 
-| Word you’ll see | Pretend it means… |
-|---|---|
-| **Contest / challenge** | The whole tryout 8090 is running |
-| **Packet / case** | One alien’s paperwork = usually one PDF file |
+| Word | Pretend it means… |
+|------|-------------------|
+| **Contest / challenge** | The whole 8090 tryout |
+| **Packet / case** | One alien’s paperwork = usually one PDF |
 | **Field** | One fact to extract, like “name” or “fee paid?” |
-| **Adjudication** | The final decision: approve / deny / needs a human |
-| **APPROVED** | “Let them in” |
-| **DENIED** | “Keep them out” |
-| **NEEDS_REVIEW** | “I’m not sure — ask a human” |
-| **Offline** | While they’re grading you, your program **cannot** use Wi‑Fi, ChatGPT, or cloud tools. Everything must already be inside the box you shipped. |
-| **Score** | A number out of **150**. Higher is better. Chapter 2 explains the math. |
+| **Decision / adjudication** | Approve / deny / ask a human |
+| **APPROVED** | Let them in |
+| **DENIED** | Keep them out |
+| **NEEDS_REVIEW** | Not sure — ask a human |
+| **Offline** | While grading you, your program **cannot** use Wi‑Fi, ChatGPT, or cloud tools |
+| **Score** | A number out of **150**. Higher is better |
 
-You do **not** need the rest of the dictionary yet.
+## 1.3 What “winning” means
 
-## 1.3 What “winning” looks like in human terms
+They give everyone the same messy PDFs.  
+Your program writes answers.  
+They compare to hidden correct answers and give points.
 
-They give everyone the same messy PDFs.
+Three kinds of being right:
 
-Your program writes answers.
+1. Did you copy the **facts** correctly?  
+2. Did you pick the right **decision**?  
+3. When you said “I’m 90% sure,” were you actually right about that often?
 
-They compare your answers to the hidden correct answers and give you points.
-
-Three kinds of being right matter:
-
-1. **Did you copy the facts correctly?** (name, fee, visa…)  
-2. **Did you pick the right decision?** (approve / deny / review)  
-3. **When you said “I’m 90% sure,” were you actually right about 90% of the time?**
-
-There is one nightmare mistake (you’ll see the letters **CFA** later):
+**Nightmare mistake** (later called **CFA**):
 
 > Saying **APPROVED** when the truth was **DENIED**.
 
-That’s like stamping “come on in” on someone who should have been blocked.
-Organizers hate it. Our team treated “never do that on the practice set” as
-a hard rule.
+Like stamping “come in” on someone who should have been blocked.
 
 ## 1.4 The PDFs are mean on purpose
 
-These are not clean tax forms.
+Not clean tax forms. They include:
 
-The pages are designed to trick a lazy program:
-
-- ink **stamps** that don’t exist as copy-paste text,
+- ink **stamps** you can’t copy-paste as text,
 - fake “SAMPLE DENIAL” watermarks,
 - washed / damaged fee receipts,
-- little planted “answer key” text that lies if you trust it blindly.
+- planted “answer key” text that lies if you trust it blindly.
 
-So if your program only “selects all text” from the PDF and believes it,
-it will fail. A serious program usually **turns each page into a picture**
-and **reads the picture** (like a human looking with their eyes). Chapter 3
-is entirely about that idea.
+A program that only “selects all text” will fail. A serious program usually
+**turns each page into a picture** and **reads the picture**. Chapter 3.
 
-## 1.5 What you have to turn in (homework metaphor)
+## 1.5 What you hand in (homework metaphor)
 
-Think of three homework items. Miss one and you may not count as entered.
+### Homework A — Public recipe book
 
-### Homework A — Your public recipe book
+A public code folder on GitHub, including a **Dockerfile** (recipe for a
+sealed mini-computer image). Graded with the network unplugged.
 
-A public folder of code on GitHub (a website for sharing projects).
+### Homework B — Answer sheet for the big practice exam
 
-It must include a **Dockerfile**: a recipe that builds a sealed mini-computer
-image with your program and tools already installed.
+A **pull request** (PR) on the official contest project — “please accept my
+submission folder” — with:
 
-When they run that image for scoring, they unplug the network on purpose.
-
-### Homework B — Your answer sheet for the big practice exam
-
-You open a **pull request** (PR) on the official contest GitHub project —
-basically: “please accept my submission folder.”
-
-Inside your folder you put:
-
-1. **`predictions.jsonl`** — 5,000 lines of answers (one line per practice case)  
-2. **`MEMO.md`** — a short write-up of what you built  
+1. **`predictions.jsonl`** — 5,000 lines of answers  
+2. **`MEMO.md`** — short write-up  
 3. **`SUBMISSION.md`** — links + claimed practice score  
-
-(`jsonl` just means “each line is one small structured answer.”)
 
 ### Homework C — A Google form
 
-They also want a form filled out. Code alone may not be enough.
+Code alone may not be enough.
 
-## 1.6 What “running your program” means (still dumbo)
+## 1.6 What “running your program” means
 
-They do something like:
+> “Here’s a folder of PDFs. Write answers into this output file. Go.”
 
-> “Here’s a folder full of PDFs. Write your answers into this output file. Go.”
+No human clicking. No internet. No downloading a smarter model mid-grade.
 
-Your sealed program must:
+## 1.7 Practice homework vs the real final
 
-1. read every PDF in the folder,
-2. write one answer per case,
-3. stop.
+| Pile | How many | See correct answers? | For |
+|------|--------:|----------------------|-----|
+| **Train** | 1,000 | Yes | Practice at home (“138 / 150” lives here) |
+| **Validation** | 5,000 | No | Big practice exam in the PR |
+| **Private** | Hidden | No | Real final grade / who is #1 |
 
-No human clicking. No internet. No “let me download a smarter model real quick.”
+Memorizing the 1,000 practice files can fake a high homework score and die
+on the final. Later we talk about cheat sheets we refused.
 
-## 1.7 Practice homework vs the real final exam
+> High practice score only counts if the method should work on new PDFs.
 
-They don’t only have one pile of PDFs.
-
-| Pile | How many | Do you see the correct answers? | What it’s for |
-|------|--------:|----------------------------------|---------------|
-| **Train** | 1,000 | Yes | Practice at home. This is where you measure “138 / 150.” |
-| **Validation** | 5,000 | No | The big practice exam answers you put in the PR |
-| **Private** | Hidden | No | The real final grade / who ranks #1 |
-
-**Important life lesson:** memorizing the 1,000 practice PDFs (or hardcoding
-their IDs) can fake a high homework score and then die on the final.
-Later chapters talk about “cheat sheets” we refused.
-
-You do **not** need those cheat-sheet words yet. Just remember:
-
-> High practice score is only impressive if the method should still work on
-> PDFs you’ve never seen.
-
-## 1.8 What you should feel after this chapter
-
-You should be able to tell a friend:
+## 1.8 Checkpoint — say this to a friend
 
 > “8090 is hiring with a Men-in-Black paperwork contest. You write a program
-> that reads tricky PDF applications and decides approve, deny, or ask a
-> human — with no internet while they grade you. They score you out of 150.
-> The worst mistake is approving someone who should have been denied.”
+> that reads tricky PDFs and decides approve, deny, or ask a human — with no
+> internet while they grade you. Score out of 150. Worst mistake: approving
+> someone who should have been denied.”
 
-If you can say that, you’re ready for **Chapter 2: Scoring** (how the
-150 points are actually counted).
-
-* * *
-
-# 2. Scoring as a weapon
-
-Total **/150** = extraction **/50** + classification **/80** + calibration **/20**.
-
-## 2.1 Classification payoffs (per case, max raw 8)
-
-| Truth → Pred | Raw |
-|--------------|----:|
-| Match | **8** |
-| → NEEDS_REVIEW | **2** |
-| True REVIEW → wrong non-REVIEW | **1** |
-| True DENIED → APPROVED | **−4** (**CFA**) |
-| Other wrong | **0** |
-
-- REVIEW → correct APPROVED/DENIED: **+6 raw ≈ +0.06** on /150.  
-- ~40 clean recovers ≈ **+2.4** → the 135.56→138 arithmetic.  
-- One CFA: −4 raw **and** integrity poison.
-
-## 2.2 Calibration
-
-Brier `(confidence − 1{correct})²`.  
-Cal ≈ `20 × max(0, 1 − 2 × mean_Brier)`.  
-v41 cal **17.86** via OOF blend **0.45** — **labels frozen**.
-
-## 2.3 CFA hard gate
-
-Public train: **CFA = 0**, **FAP = 0**, **219/219** APPROVED precision (v41).
+Ready for Chapter 2.
 
 * * *
+# 2. Scoring
 
-# 3. Why PDF text is a lie
+*Still dumbo. This is just “how the grade book works.”*
 
-Packets mix scans, ink stamps with **no selectable text**, strike-throughs, washed receipts, planted SYSTEM spans.
+## 2.0 The report card has three sections
 
-**Embedded PDF text is lowest trust.** Render pages → OCR images (**render-first**).
+Total score is out of **150**:
 
-| Naive idea | Death |
-|------------|-------|
-| `pdftotext` + regex | Silent stamps, decoys |
-| risk=none ⇒ approve | Silence ≠ clearance |
-| Cloud VLM | Forbidden |
-| Max train at all costs | Laundry → private collapse |
+| Section | Max points | Plain meaning |
+|---------|----------:|---------------|
+| **Extraction** | 50 | Did you copy the facts right? |
+| **Classification** | 80 | Did you pick the right decision? |
+| **Calibration** | 20 | Are your confidence numbers honest? |
 
-* * *
+Add them up (minus penalties if you skip cases). That’s your score.
 
-# 4. Field manual & precedence
+## 2.1 The decision points (the biggest chunk)
 
-Implement **their** manual. **Fail-closed:** ambiguity → NEEDS_REVIEW, never APPROVED.
+For each case, imagine a mini-score for the decision.
 
-Precedence (high→low): adjudicatory stamps / signed notes → biometric/registry → intake fields → sponsor letters → planted text.
+| What happened | Rough vibe |
+|---------------|------------|
+| You matched the true decision | Best |
+| You said “ask a human” when you weren’t sure | Okay / conservative |
+| You said APPROVED but truth was DENIED | **Disaster** (CFA) |
+| Other wrong | Bad / zero |
 
-- Visible disqualifying risks block APPROVED.  
-- Silent risk is the CFA factory.  
-- `fee_status=unknown` never unlocks APPROVED.  
-- MED-3/XW-1 LC without traps → 11 CFA (measured).
+Turning a careful “ask a human” into a **correct** approve/deny is how you
+climb. Doing it wrong once can wipe a lot of climbing.
 
-* * *
+**CFA** = Catastrophic False Approval = APPROVED when truth was DENIED.
 
-# 5. Architecture
+## 2.2 Confidence points (calibration)
 
-Vendor base: **strobl/mib-doc-solution** (MIT). Our re-run: **130.26**, CFA=0.
+Your program also outputs a number from 0 to 1: “how sure am I?”
 
-```text
-PDF
- ├─ rasterize (pypdfium2)
- ├─ Tesseract sparse OCR
- ├─ RapidOCR — UNKNOWN fields only
- ├─ resolve conflicts
- ├─ adjudicate (field manual)
- └─ Arjun post-process
-      ├─ visible field repairs
-      ├─ gated visible OCR (fee / Finding / risk)
-      ├─ AK field transcription (layout-corroborated; never adj)
-      ├─ layout-consensus APPROVED (4 visas + fee proof + names + traps)
-      ├─ Finding DENIED / NEEDS_REVIEW / Registry EMBARGO
-      ├─ damage / risk / filler / trap demotions
-      ├─ policy softens (never invent APPROVED)
-      ├─ TRANSIT-7 hard deny if wrongly APPROVED
-      └─ OOF confidence blend (cal only; blend=0.45)
- → JSONL
-```
+If you always say 99% and you’re often wrong, you lose calibration points.  
+If your 70% cases are right about 70% of the time, you look honest.
 
-### Five commandments
+You can improve calibration **without changing any decisions** — like
+retuning a speedometer without changing where the car goes.
 
-1. Render / visible-evidence first  
-2. Fail closed — silence is not clearance  
-3. CFA = 0 hard gate  
-4. Identity-free rules — no case-ID tables, no `train_labels` at inference  
-5. Attribute vendors — credit strobl; own the heads
+## 2.3 Our hard rule on the practice set
 
-### Module map
+On the 1,000 practice cases we care about:
 
-| Module | Job |
-|--------|-----|
-| `solution.py` / `Dockerfile` / `run.sh` | Entry |
-| `extraction.py` / `resolution.py` / `adjudication.py` | Core stack |
-| `rapid_recovery.py` | RapidOCR + head wiring |
-| `arjun_heads.py` | LC, demotions, Finding, EMBARGO, traps |
-| `arjun_answer_key.py` | SYSTEM **fields only** + layout corroboration |
-| `arjun_visible_ocr.py` | Selective high-value OCR; fee clobber guard |
-| `arjun_confidence.py` | OOF blend |
-| `policy_exceptions.json` | Empty `exceptions: []` |
+- **CFA = 0** (never approved a true DENIED)  
+- Also no false APPROVED on true “needs review”  
+- Final practice score we shipped: about **138.086 / 150**
+
+You’ll see those numbers again in the climb chapter. For now just know:
+**safe > flashy.**
+
+## 2.4 Checkpoint
+
+> “Grade is /150: facts, decisions, honest confidence. Approving a true deny
+> is the nightmare. We kept that at zero on practice.”
 
 * * *
+# 3. Why PDFs lie
 
-# 6. Owned heads — every lever
+## 3.0 The trap
 
-### 6.1 Visible field repairs
-Layout repairs fee/name/visa/purpose/sponsor when cues are visible. Never creates APPROVED alone.
+A PDF can contain:
 
-### 6.2 Layout-consensus APPROVED (LC)
-Promote REVIEW→APPROVED only if:
+- text you can highlight and copy, **and**
+- pictures of text (stamps, handwriting, washed ink) with **no** copyable text.
 
-- visa ∈ `{DIP-1, XW-2, MED-3, XW-1}`  
-- fee proven (`paid` + visible `$809`, or waived path)  
-- unique registry name == applicant name  
-- risk none; world not wrongly embargoed  
-- arrival not placeholder  
-- not medical-consult under silent B-13  
-- page signature: no non-core `O`; `RIF` only for field repair  
-- **not** in trap frozensets (visa×purpose / ×sig / waived-only)
+Danger marks are often in the second pile.
 
-Traps **block** — they never unlock APPROVED.
+So “extract text from PDF” can miss the stamp that says DENIED, and still
+cheerfully read a fake line that says everything is fine.
 
-### 6.3 Fee geometry (v41)
-`Amount $809` + `Waiver Code: N/A` → `paid`. OCR cannot clobber with waived.
+## 3.1 What serious programs do instead
 
-### 6.4 Answer-key fields
-SYSTEM span fields only; decoys filtered; **layout must corroborate**; never key adjudication. `MIB_ALLOW_ANSWER_KEY=0` kills it.
+1. **Draw each page as an image** (like a screenshot of the page).  
+2. **OCR** = Optical Character Recognition = “read the picture into letters.”  
+3. Then decide using what the eyes would have seen.
 
-### 6.5 Finding / EMBARGO
-Exact Finding DENIED / NEEDS_REVIEW; Registry EMBARGO → planetary_embargo + DENIED.
+We call that **render-first** (pictures first, not embedded text first).
 
-### 6.6 Safety demotions
-Fee unknown; filler; RIF/O; visible risk; UNREADABLE/REDACTED damage on APPROVED.
+## 3.2 Dumb ideas that die
 
-### 6.7 Softens (never invent APPROVED)
-`rescinded_denial` → REVIEW; DIP + `illegible_biometrics` → REVIEW.
+| Idea | Why it dies |
+|------|-------------|
+| Only copy embedded text | Misses stamps; believes decoys |
+| “If risk says none, approve” | “None” often means “I didn’t see anything,” not “safe” |
+| Call ChatGPT / cloud vision during grading | Forbidden (offline) |
+| Memorize practice answers | Dies on private final |
 
-### 6.8 OOF confidence blend
-Key: `(adjudication, fee_known, missing_field_count)`. Blend **0.45**. Calibration only.
+## 3.3 Checkpoint
+
+> “These PDFs trick text-only programs. We screenshot pages and read the
+> pictures. Silence is not safety.”
 
 * * *
+# 4. The rulebook
 
-# 7. Docker & submission contract
+## 4.0 You don’t invent immigration law
 
-- `--network none`, pinned `requirements.lock`, cal artifacts baked in  
-- ~4 CPU / 8 GiB; ~2–6 s/PDF with 4 workers  
+8090 publishes a **field manual** — the clerk’s rulebook.
 
-**PR files (live):**
+Your program must follow **their** rules, not vibes.
 
-| File | Content |
-|------|---------|
-| `predictions.jsonl` | 5000/5000, validator clean |
-| `SUBMISSION.md` | **138.086**, CFA=0 |
-| `MEMO.md` | Approach + failure modes |
+## 4.1 Fail closed (the personality of our clerk)
 
-**Val SHA-256:** `ab5e5ea15df059dff2d39447e889637720227051d9fa3e181103229f07fa3d51`
+If evidence is missing or conflicting:
 
-Account: **`arjunkshah12345-hash`**. Solution repo name: **`mib-doc-solution`** (not local folder `mib-challenge-v2`, not `mib-challenge-v1`).
+> Prefer **ask a human** over **approve**.
+
+That’s **fail closed**.  
+The opposite (guess approve) is how you create CFAs.
+
+## 4.2 Who wins when pages disagree?
+
+Rough trust order (high → low):
+
+1. Clear official findings / stamps  
+2. Registry / biometric extracts  
+3. The main intake form  
+4. Sponsor letters  
+5. Suspicious planted text  
+
+Crossed-out text is a retraction. Don’t treat it as the answer.
+
+## 4.3 A few rules that matter for disasters
+
+- If a **danger mark is visible**, don’t approve.  
+- If danger might be there but you can’t see it (**silent**), don’t pretend
+  you cleared it.  
+- If you don’t even know whether the fee was paid, don’t approve.  
+- Some visa types look “easy to auto-approve” and are exactly where silent
+  danger stamps hide. We learned that the hard way (Chapter 8).
+
+## 4.4 Checkpoint
+
+> “We follow their manual. When unsure, ask a human. Never treat missing
+> evidence as a green light.”
 
 * * *
+# 5. Our program, in English
 
-# 8. The climb — how we improved each time
+## 5.0 We didn’t invent everything from scratch
 
-Now that you know the contest and the system, here is every score jump.
+A public engineer (**strobl**) already published a strong open-source starting
+pipeline under MIT license. We reused it with credit, then added our own
+safety layers on top.
 
-## 8.1 Scoreboard (public train / 150, CFA=0 unless noted)
+Re-running that baseline alone scored about **130 / 150** with zero CFA.
+That’s our floor story: stand on something measured, don’t rebuild OCR for ego.
 
-| Step | Score | What changed | Why it worked | Transfer? |
-|-----:|------:|--------------|---------------|-----------|
-| 0 | — | Read rules; `pdftotext` dies on stamps | Contest is adversarial pixels | — |
-| 1 | **130.26** | Vendor **strobl** render-first stack | Strong baseline beats ego rewrite | **Yes** |
-| 2 | **132.34** | v27 first owned Docker entry | Fail-closed + AK fields + DIP/XW-2 seed | **Yes** |
-| 3 | **132.50** | v28 | Beat gole-style over-aggression cleanly | **Yes** |
-| 4 | **132.93** | v29 | Stabilize DIP-1+XW-2 layout consensus | **Yes** |
-| 5 | **133.60** | **v30 ship** | Demotion heads; first serious PR tip | **Yes** |
-| 6 | **135.06** | v32 | Demote *our own* false LC APPROVEDs | **Yes** |
-| 7 | **~135.35** | v33 | Finding:NEEDS_REVIEW + policy softens | Mostly **yes** |
-| — | (in) | Registry regex fix | Real name-match evidence finally fires | **Yes** |
-| ✗ | **135.98** | v34 | Reopen XW-1/MED-3 via page-sig allows | **No** — rolled back |
-| ✗ | **137.48** | v35 | Purpose×signature **APPROVED allowlists** | **No** — rolled back |
-| ✗ | +0.08 | Magic conf ≈0.552 | Train-tuned softener | **No** — deleted |
-| 8 | **135.27** | v36 | Delete laundry + softener | **Yes** (integrity) |
-| 9 | **135.41** | v37 | Finding:DENIED + Registry EMBARGO | **Yes** |
-| 10 | **135.56** | **v38 ship** | OOF confidence blend (labels frozen) | **Yes** |
-| ✗ | ~138 | Parallel allowlist trees | Phonebook APPROVED unlocks | **Refused** |
-| 11 | **138.043** | v39 offline | LC expand + **trap blocklists** + OCR/stamp/cal | Conditional |
-| 12 | **138.006** | v39b/v40 E2E | Waived traps, DIP soften, SAMPLE skip | Conditional |
-| 13 | **138.086** | **v41 SHIPPED** | Fee $809/Waiver N/A; AK layout corroboration; blend 0.45 | **Bet** |
+## 5.1 The assembly line (one PDF)
 
-**Ablation that defines the bet:** LC expand **without** traps → **136.757** but **11 CFA / 4 FAP**. Traps are load-bearing for CFA=0.
+Imagine a factory belt:
 
-## 8.2 The improvement story in plain English
+1. **Open the PDF and screenshot every page.**  
+2. **Read the screenshots** with a text-from-image engine (Tesseract).  
+3. If some fields are still blank, try a second reader **only for blanks**
+   (RapidOCR) — it doesn’t get to outvote a good answer.  
+4. **Resolve fights** when pages disagree (trust rules from Chapter 4).  
+5. **Apply the field manual** to draft a decision.  
+6. **Run our extra safety gadgets** (Chapter 6) — repairs, “are we sure
+   enough to approve?”, demotions, confidence tuning.  
+7. **Write one answer line** for that case.
+
+Do that for every PDF in the folder.
+
+## 5.2 Five commandments (tape these on the wall)
+
+1. **Pictures first** — visible evidence beats embedded text.  
+2. **Fail closed** — silence ≠ clearance.  
+3. **Never CFA on purpose** — CFA=0 is a hard practice gate.  
+4. **No cheat sheets of case IDs** — and don’t peek at the answer key file
+   at scoring time.  
+5. **Credit what you borrowed** — strobl base; we own the extra gadgets.
+
+## 5.3 Checkpoint
+
+> “Screenshot → read → resolve → rulebook → our safety extras → write
+> answers. Borrowed a strong base, added fail-closed layers.”
+
+* * *
+# 6. Extra safety gadgets
+
+*These are the “Arjun heads” — little post-steps after the base clerk.*
+
+You can skim this once, then come back after Chapter 8.
+
+## 6.1 Fix obvious fields when the page shows them
+
+If the page clearly shows a fee amount or a name, repair the field.  
+This alone does **not** mean “approve.”
+
+## 6.2 The careful auto-approve gate (layout consensus)
+
+Sometimes the base clerk says “ask a human,” but the packet looks clean.
+
+We only flip to APPROVED if **many** visible checks pass, including things
+like:
+
+- fee really looks paid (often a visible **$809**),
+- registry name matches applicant name,
+- no visible danger,
+- not a known dangerous pattern we quarantined.
+
+We call this **layout consensus** (LC) — “the layout agrees it’s safe.”
+
+## 6.3 The planted “answer key” text
+
+Some PDFs contain a tiny planted SYSTEM “answer key” block.
+
+**Trap:** if you copy its final decision blindly, you can CFA-bomb.  
+**What we do:** maybe repair **fields** (name, fee…) when the rest of the
+page agrees; **never** take its approve/deny as gospel.  
+There’s a kill switch to turn this off.
+
+## 6.4 Honor explicit findings
+
+If the page literally says Finding: DENIED or NEEDS_REVIEW, listen.  
+If registry status is EMBARGO, that’s a deny path.
+
+## 6.5 Demote bad approvals
+
+If we somehow approved but fee is unknown, packet is filler garbage, or
+danger is visible — kick it back to “ask a human.”
+
+## 6.6 Soften some denies to review (never invent approve)
+
+Example vibes: a denial that was rescinded; some illegible-biometrics cases.
+These move DENIED → REVIEW. They do **not** mint APPROVED.
+
+## 6.7 Confidence blend
+
+After the decision is frozen, retune the confidence number with a small
+honest statistical blend. **Labels don’t change.** CFA risk from this step:
+basically none by construction.
+
+## 6.8 Checkpoint
+
+> “Extra gadgets repair fields, carefully approve only with proof, fence the
+> planted key, demote bad approvals, and retune confidence without changing
+> decisions.”
+
+* * *
+# 7. How we hand it in
+
+## 7.0 The sealed box
+
+They build your Docker image and run it offline on limited CPUs/RAM.  
+Your tools and calibration files must already be inside.
+
+## 7.1 What is live right now
+
+| Piece | Where |
+|-------|--------|
+| Solution recipe book | GitHub repo **`mib-doc-solution`** |
+| Contest entry | Pull request **#15** on the official challenge repo |
+| Practice claim | **138.086 / 150**, CFA = 0 |
+| Validation answers | 5,000 / 5,000 lines, validator clean |
+
+Account: **`arjunkshah12345-hash`**.
+
+**Note:** there is also an experimental repo named `mib-challenge-v1`.  
+That is a **side lab**. The contest PR points at **`mib-doc-solution`**, not v1.
+
+## 7.2 Checkpoint
+
+> “We shipped a public Dockerized recipe and a PR with 5,000 validation
+> answers claiming ~138 with zero catastrophic false approvals.”
+
+* * *
+# 8. How we improved each time
+
+*Now the story. You finally know what the numbers mean.*
+
+## 8.0 How to read a score jump
+
+Each row is: we changed the robot → practice score moved → was it honest?
+
+**Transfer?** means “should this still work on new PDFs?”  
+**Yes** = probably. **No** = cheat-sheet smell. **Bet** = honest but risky.
+
+## 8.1 Scoreboard (practice / 150)
+
+| Step | Score | What we did | Transfer? |
+|-----:|------:|-------------|-----------|
+| Start | — | Read rules; text-only dies | — |
+| 1 | **130.26** | Reuse strobl picture-first base | Yes |
+| 2–5 | **132.3 → 133.60** | Our first real ships + safety | Yes |
+| 6–7 | **~135.1–135.4** | Stop approving our own mistakes | Yes |
+| ✗ | **135.98 / 137.48** | Cheat-sheet approve lists | **No — deleted** |
+| 8–10 | **135.27 → 135.56** | Integrity reset + honest confidence | Yes |
+| ✗ | ~138 allowlists | Phonebook “approve these combos” | **Refused** |
+| 11–13 | **~138.0 → 138.086** | Careful auto-approve expand + **block** lists + portable fixes | **Bet** |
+
+## 8.2 The story in five phases
 
 ### Phase A — Stand up something real (→ 133.60)
 
-1. **Don’t invent OCR.** Strobl already had render → Tesseract → resolve → adjudicate. Re-run: **130.26**, CFA=0.  
-2. **Own the safety layer.** Fee unknown never APPROVED. Layout-consensus only for clean DIP-1/XW-2 with visible `$809` + registry name match.  
-3. **Fence the planted answer key.** Take **fields** from SYSTEM spans; never take adjudication.  
-4. **Ship Docker offline.** v27→v30 climb: **132.34 → 133.60**.
+Don’t reinvent OCR. Borrow strobl. Add: never approve if fee unknown;
+careful auto-approve only for the safest visa types with visible proof;
+fence the planted key; ship Docker.
 
-**Lesson:** First leaderboard points come from integrity + evidence gates, not max APPROVED count.
+**Lesson:** first points come from safety + evidence, not max approvals.
 
 ### Phase B — Tighten our own approvals (→ ~135.4)
 
-LC was too eager. Cases that *looked* clean in OCR were wrong.
+The careful auto-approve was too eager. Demoting bad approvals **raised**
+the score. Fixing a silly name-matching bug gave free honest points.
 
-5. **v32 demotions** (+~1.4): fee unknown, filler packets, non-core `O` pages, trap cells → kick APPROVED back to REVIEW. Score **went up** by being stricter.  
-6. **v33**: honor explicit `Finding: NEEDS_REVIEW`; soften rescinded denial / DIP illegible biometrics to REVIEW.  
-7. **Registry regex bug:** LC required name match but whitespace class was broken — real evidence never fired. One fix → free honest points.
+**Lesson:** sometimes “approve less” scores higher.
 
-**Lesson:** Sometimes the climb is “stop approving garbage,” not “approve more.”
+### Phase C — Temptation (137.48) then delete
 
-### Phase C — Temptation and repentance (137.48 → delete)
+We tried phonebook unlocks (“if this purpose + page pattern, approve”).  
+Practice looked hot. It smelled like memorization. We deleted it. Score
+fell to ~135.3 — **correct**.
 
-8. **v34/v35:** reopen MED-3/XW-1 and purpose×sig **allowlists**. Train looks hot (**137.48**). Ablation screams overfitting (n=1–2 cells).  
-9. **Probe:** expand LC visas with *identical* gates, no new traps → **6 CFA + 3 FAP**. Silent stamps read as `risk=none`.  
-10. **v36:** delete the laundry. Score drops to **135.27** — correct.
+**Lesson:** highest practice score ≠ what you should ship.
 
-**Lesson:** Highest train score ≠ submission. Show the number you deleted.
+### Phase D — Honest 135.56 ship
 
-### Phase D — Honest 135.56 ship (v37–v38)
+Honor explicit DENIED / EMBARGO. Retune confidence without changing
+decisions. This was the conservative ship. Closest rival later: ~**135.30**.
 
-11. **v37:** `Finding: DENIED` and `Registry Status: EMBARGO` → DENIED.  
-12. **v38:** OOF Laplace confidence blend. Labels frozen. Cal **17.67**. Shipped PR + solution as the **transfer-safe** claim. Closest published rival later sits ~**135.30** (Abhishek).
+### Phase E — The 138 bet we actually shipped
 
-**Lesson:** When classification is CFA-gated, buy calibration without touching decisions.
+Not the phonebook approve lists.
 
-### Phase E — Different path to 138 (v39–v41) — what we shipped
+Instead:
 
-Earlier “138” = **mint APPROVED** from purpose×sig phonebooks. **Still refused.**
+1. Allow careful auto-approve on a few more visa types,  
+2. Keep a **block list** of patterns that caused silent-stamp disasters
+   (these **stop** approve — they don’t mint approve),  
+3. Add portable fee / key-corroboration / confidence polish.
 
-Shipped 138 = **different polarity**:
+**Live: 138.086, CFA=0.**
 
-13. Expand LC to `{DIP-1, XW-2, MED-3, XW-1}` with the same hard fee/name/risk gates.  
-14. Quarantine measured silent-stamp CFA cells into **trap blocklists** (block approve — never unlock).  
-15. Portable evidence: OCR unpaid cues, slash-stamp, **Amount $809 + Waiver N/A → paid** (OCR cannot clobber), **AK decoys only if layout corroborates**.  
-16. Cal blend **0.25 → 0.45**.
+Why not roll back to 135.56? Rival is too close. Rollback makes it easy for
+them to beat us on the final. We accepted risk to chase #1.
 
-**Live claim: 138.086 / CFA=0 / FAP=0 / 219 perfect APPROVED.**
+## 8.3 What “the bet” means in one picture
 
-**Why we didn’t roll back to 135.56:** Abhishek is too close. Rollback hands him an easy private overtake. We accept trap-transfer risk for win EV.
+If we expand careful auto-approve **without** the block lists:  
+practice still looks high, but we get **many CFAs** (we measured **11**).
 
-## 8.3 Confusion: v38 → v41 (what the +2.5 bought)
+So the block lists are load-bearing for “high score + zero CFA” on practice.  
+On the private final, they only help if similar traps appear again.
 
-| | APPROVED | DENIED | NEEDS_REVIEW |
-|--|--------:|-------:|-------------:|
-| **v41** truth APPROVED | **219** | 6 | **64** |
-| **v41** truth DENIED | **0** | 403 | 28 |
-| **v41** truth REVIEW | **0** | 3 | 277 |
+## 8.4 Checkpoint
 
-v38 had **186** correct APPROVED and **97** true-AP stuck in REVIEW.  
-v41 recovered **+33** true APPROVED; CFA still 0; FAP still 0.
-
-## 8.4 One-sentence pitch
-
-> Offline render-first pipeline, fail-closed field manual, **138.086/150 with zero CFA**. We refuse APPROVED allowlists; we shipped LC expand behind trap **blocklists** plus portable fee/AK/cal — because the closest rival is ~135.3 and rollback loses the race.
+> “We climbed 130 → 135.5 honestly, refused cheat-sheet 138, then shipped a
+> different 138: expand careful approve behind block lists because the rival
+> sits at 135.3.”
 
 * * *
+# 9. Same climb, more detail
 
-# 9. The chronicle — every score jump (detail)
+## 9.1 Empty desk
+Read their docs. Download data. Learn: fees and danger marks dominate errors;
+silent stamps dominate CFA risk. Only the official scorer’s numbers count.
 
-## 9.1 Era 0 — Empty repo
-Read FIELD_MANUAL, EVALUATION, DOCKER_SUBMISSION. Profile decoys. Bootstrap render+OCR.  
-**Lesson:** Only `evaluate.py` numbers count.
+## 9.2 Borrow strobl → 130.26
+Seniors reuse measured baselines.
 
-## 9.2 Era 1 — Strobl → 130.26
-Vendor MIT render-first stack with attribution.  
-**Lesson:** Seniors reuse measured baselines.
+## 9.3 First ships → 133.60
+Versions v27→v30: fee gate, careful DIP/XW approve, fenced key fields, Docker.
 
-## 9.3 Era 2 — First ships → 133.60 (v27–v30)
+## 9.4 Tighten → ~135.4
+Demote false approvals; honor NEEDS_REVIEW findings; softens; regex fix.
 
-| Ver | Score | Delta focus |
-|-----|------:|-------------|
-| v27 | 132.34 | First offline owned entry |
-| v28 | 132.50 | Cleaner than gole-style aggression |
-| v29 | 132.93 | Stabilize DIP-1+XW-2 LC |
-| **v30** | **133.60** | Demotion heads; serious ship |
+## 9.5 Temptation → delete
+Signature / purpose phonebooks to 137.48. Probe: expand visas alone → CFAs.
+Deleted.
 
-Owned stack: fee-unknown gate, DIP/XW-2 LC, fenced AK fields, RapidOCR fill-only, Docker bake.  
-Extr **46.44** / Cls **70.12** / Cal **17.04**.
+## 9.6 Integrity 135.56
+Strip laundry; Finding DENIED + EMBARGO; confidence blend.
 
-## 9.4 Era 3 — Tighten → ~135.4 (v32–v33)
-Demote false LC APs; Finding REVIEW; softens; registry regex fix.  
-**Lesson:** Stricter can raise score.
+## 9.7 Ship bet 138.086
+Expand visas + block lists (~+2.1) + small portable lifts.  
+Rough private odds we told ourselves: favorite, not a lock; main upset path
+is rival transferring cleaner while we eat a new silent-stamp CFA.
 
-## 9.5 Era 4 — Temptation → delete (v34–v35)
-Allowlist / signature laundry to 137.48. Probe CFA factory on visa expand. **Deleted.**  
-**Lesson:** Vanity train ≠ EV.
+## 9.8 Checkpoint
 
-## 9.6 Era 5 — Integrity 135.56 (v36–v38)
-Strip laundry → Finding DENIED/EMBARGO → OOF cal. **Prior conservative ship.** Still the rollback reference.
-
-## 9.7 Era 6 — 138 ship bet (v39–v41)
-
-| Slice vs v38 | ≈Δ | CFA |
-|--------------|---:|----:|
-| LC expand + traps | +2.1 | 0 |
-| OCR unpaid | +0.27 | 0 |
-| Slash stamp | +0.06 | 0 |
-| Fee/AK/cal (v41) | +0.08 on 138 floor | 0 |
-| **Same without traps** | high | **11** |
-
-**Shipped.** Hold vs Abhishek ~135.30. Backfire odds: mild 25–40% / bad 15–25% / catastrophic 5–15% / first ~30–45%.
-
-## 9.8 Subsystem → points
-
-| Subsystem | Role |
-|-----------|------|
-| Render + Tesseract | Foundation |
-| RapidOCR holes | Extr UNKNOWN only |
-| `$809` + registry match | Core LC |
-| Registry regex | Unblocked real evidence |
-| LC DIP-1/XW-2 | +~3 vs strobl |
-| Demotions v32 | +~1.4 safer |
-| Finding / EMBARGO | v33/v37 |
-| AK + layout corroboration | Fenced extr |
-| OOF blend | Cal v38→v41 |
-| LC MED-3/XW-1 + trap **blocklists** | **Ship lift ~+2.1** |
-| Fee $809 / Waiver N/A | Portable v41 |
-| Purpose×sig **approve** lists | **Still deleted** |
+You can narrate eras A→E without notes. That’s the interview chronicle.
 
 * * *
+# 10. Things we refused to do
 
-# 10. What we refused
+| Temptation | Plain English | Status |
+|------------|---------------|--------|
+| Approve phonebooks | “If purpose+pattern matches, approve” | Refused forever |
+| One-off combo unlocks | Tiny tables that only fit 1–2 practice cases | Refused forever |
+| Case-ID cheat sheets | Hardcode answers for known IDs | Cheating |
+| Peek at train answer file while scoring | Oracle | Worthless on private |
+| “I didn’t see danger ⇒ safe” | Silence as clearance | CFA factory |
+| Ship vanity 138 allowlists | Brag number | Refused |
+| Roll back to 135.56 while rival ~135.3 | Safer ego | Refused (want to win) |
 
-| Temptation | Status |
-|------------|--------|
-| Purpose×sig **APPROVED allowlists** | Refused forever |
-| Singleton approve cells | Refused forever |
-| Case-ID unlocks / `train_labels` at inference | Cheating |
-| “Silent risk = none” | CFA factory |
-| Allowlist 137–138 vanity ships | Refused |
-| Rollback to 135.56 while rival @ ~135.3 | Refused (win EV) |
+**Shipped block lists ≠ approve phonebooks.**  
+Same family of tables, **opposite polarity**: stop approve vs mint approve.
 
-Shipped traps = **blocklists**, opposite polarity of allowlists. Drop them → 11 CFA.
+## 10.1 Checkpoint
 
-* * *
-
-# 11. Competitors, answer keys, optics
-
-| Entrant | ~Train | Note |
-|---------|-------:|------|
-| **You (v41)** | **138.086** | CFA0 FAP0; LC+traps + portable lifts |
-| You (v38) | 135.56 | Safer; too close to rival |
-| **Abhishek21g** | **~135.30** | Closest published rival |
-| strobl | ~130.4 | Transfer baseline |
-
-AK optics: fields only, layout-corroborated, never adj, kill-switched. Own that in the memo.
+> “We refuse cheat-sheet approves. We shipped fail-closed blocks under a
+> careful approve expand to stay ahead of a 135.3 rival.”
 
 * * *
+# 11. Who else is in the race
 
-# 12. Failure modes that still own us
+Published practice claims (approximate, from their submission files):
 
-1. Invisible deny / biohazard stamps (no OCR token)  
-2. **Novel** silent-stamp CFA cells on private (trap miss)  
-3. Washed fee receipts  
-4. Filler-heavy incomplete packets  
-5. Planted SYSTEM decoys  
-6. Residual true-AP in REVIEW (~64)  
-7. Residual true-DENIED in REVIEW (~28)
+| Who | ~Practice | Notes |
+|-----|----------:|-------|
+| **Us** | **138.086** | CFA 0; the 138 bet |
+| **Abhishek** | **135.30** | Closest real rival; CFA 0 |
+| thegoleffect | ~132 | Solid |
+| strobl | ~130 | Baseline author |
+| Others | ≤~130 | Need a miracle for #1 |
 
-Raw red-pixel ratios don’t separate silent biohazard from clean APPROVED. Residual is **vision**, not another purpose table.
+Private final can reorder people. On **known** claims, we’re first; Abhishek
+is the main person who can steal it if our bet backfires.
 
-* * *
+## 11.1 Checkpoint
 
-# 13. Ship posture — hold 138 & wait
-
-**Locked:** stay on v41 / 138.086. No rollback. No new laundry. No trap expansion.
-
-Wait unless someone publishes clearly above ~138 with CFA=0, or organizers ask for a fix.
-
-Only real no-code safety lever = rollback (rejected). No env flag disables LC/traps.
+> “Public board: we’re ahead. Private #1 still a fight, mostly vs Abhishek.”
 
 * * *
+# 12. What still breaks
 
-# 14. How to defend this in a room
+1. Danger stamps with no readable text (eyes see ink; OCR sees nothing).  
+2. Brand-new silent-stamp patterns on private that our block list never saw.  
+3. Washed fee receipts.  
+4. Filler junk packets that look completable.  
+5. Planted SYSTEM decoys.  
+6. Some true approves still stuck in “ask a human.”  
+7. Some true denies still stuck in “ask a human.”
 
-**Whiteboard (3 min):** PDF → images → OCR → resolve → policy → LC/safety heads → confidence → JSONL. Pitch. One refusal. Stop.
+The honest next research step is better **stamp vision**, not another
+purpose phonebook.
 
-| Question | Answer |
-|----------|--------|
-| Why render-first? | Critical marks may not be embedded text; decoys may. |
-| How avoid CFA? | Fail-closed; Finding/EMBARGO; no approve-laundry; traps under expanded LC; ablation 11 CFA without traps. |
-| Why 138 if you refused it? | Refused *allowlist* 138. Shipped *blocklist* 138 + portable fee/AK/cal. Rival ~135.3. |
-| Private risk? | Novel silent-stamp CFA. ~15–25% chance ≥1 CFA costs the lead. |
-| AK cheating? | Fields only, corroborated, never adj, kill-switched. |
-| Blend leak labels? | No — identity-free keys after decision frozen. |
-| What’s next? | Wait. Stamp vision is the real residual. |
+## 12.1 Checkpoint
+
+> “Silent stamps still own the residual. That’s the cliff under our 138 bet.”
 
 * * *
+# 13. What we’re doing now
 
-# 15. Glossary
+**Hold the ship.** Read. Wait.
+
+Do not expand block lists for fun.  
+Do not roll back unless the goal changes from winning to max safety.  
+Only reopen if someone publishes clearly above ~138 with clean CFA=0, or
+organizers ask for a fix.
+
+## 13.1 Checkpoint
+
+> “Shipped. Chilling. Bible time.”
+
+* * *
+# 14. If someone asks you in a room
+
+**3-minute whiteboard:**  
+PDF → pictures → read text → resolve fights → rulebook → safety gadgets →
+confidence → answer file.  
+Then the friend-pitch from §1.8. Then one refusal from §10. Stop.
+
+| They ask | You say |
+|----------|---------|
+| Why pictures first? | Stamps/decoys; humans look with eyes. |
+| How avoid the nightmare approve? | Fail closed; honor findings; no approve-phonebooks; block lists under expanded careful-approve; without blocks we measured many CFAs. |
+| Why 138 after refusing 138? | Refused *approve* phonebooks. Shipped *block* lists + portable fixes. Rival ~135.3. |
+| Private risk? | New silent stamps our blocks miss. |
+| Is the planted key cheating? | Fields only, must match the page, never take its decision. |
+| What’s next? | Wait. Real residual is stamp vision. |
+
+* * *
+# 15. Tiny dictionary
 
 | Term | Meaning |
 |------|---------|
-| Render-first | Score from page images |
-| CFA | DENIED→APPROVED |
-| FAP | REVIEW→APPROVED (false) |
-| LC | Layout-consensus approve path |
-| Allowlist | Table that **mints** APPROVED — refused |
-| Trap blocklist | Table that **blocks** LC APPROVED — shipped |
-| OOF | Out-of-fold calibration fit |
-| Transfer-safe | Expected to hold on unseen PDFs |
-| SYSTEM span | Planted debug/answer-key text in some PDFs |
-| JSONL | One JSON object per line |
+| PDF | Digital multi-page document |
+| OCR | Read letters from a page picture |
+| Render-first | Screenshot pages before trusting embedded text |
+| CFA | Approved a case that should have been denied |
+| Fail closed | When unsure, ask a human — don’t approve |
+| LC / layout consensus | Careful auto-approve only if many visible proofs agree |
+| Allowlist / laundry | Cheat-sheet table that **creates** approvals — refused |
+| Trap / block list | Table that **blocks** careful auto-approve on known disaster patterns — shipped |
+| Offline | No internet during grading |
+| Train / val / private | Practice with answers / practice exam / real final |
+| Docker | Sealed runnable box built from a recipe file |
+| JSONL | One answer per line in a text file |
+| Transfer | Still works on PDFs you haven’t memorized |
 
 * * *
-
 # Deep appendices
 
-Technical expansions merged from the old dense volume. Same claims: **138.086 / CFA=0** shipped (v41); still refuse **allowlist** 138; trap blocklists are the ship bet.
+**Optional. Advanced. Not required to understand the contest.**
+
+These notes are denser (engineer dialect). Same shipped claim: **138.086 /
+CFA=0** on practice; still refuse approve-phonebook 138; trap block lists are
+the ship bet.
+
+If Chapter 1–15 already make sense, you can stop. Come here only when you
+want code-level or ablation-level detail.
 
 * * *
+
 # Appendix — Data Reality: What Train Teaches You
 
 ## 5.1 Label distribution (approx on 1000 train)
