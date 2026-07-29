@@ -887,7 +887,9 @@ def apply_emitted_policy_guardrail(
         payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
-    if fee == "unpaid" and not _fee_waiver_justified(visa, layout):
+    if fee == "unpaid" and not _visible_hardship_waiver(layout):
+        # Field manual / tyler: unpaid is denied unless HARDSHIP WAIVER is
+        # visible. DIP-WAIVER does not rescue an unpaid receipt.
         payload["adjudication"] = "DENIED"
         payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
@@ -909,6 +911,17 @@ def apply_emitted_policy_guardrail(
         payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
+    if visa in {"", "unknown"}:
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    # Missing sponsor is policy-incomplete for every non-diplomatic class.
+    if visa != "DIP-1" and sponsor in {"", "unknown", "SPN-0000"}:
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
     # Stale non-diplomatic packets (field manual: arrival before 2026-01-01).
     if visa != "DIP-1" and re.fullmatch(r"\d{4}-\d{2}-\d{2}", arrival):
         if arrival < "2026-01-01":
@@ -918,20 +931,22 @@ def apply_emitted_policy_guardrail(
                 payload, fallback_case_id=row.case_id
             )
 
+    # Never leave APPROVED with an unread applicant identity.
+    name = str(row.applicant_name or "").strip().casefold()
+    if name in {"", "unknown"}:
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
     if signed_approve:
         return row
 
-    # EV hedge (zubalr/tyler payoff discipline): soft confidence + thin
-    # identity → REVIEW beats APPROVED under residual deny risk.
+    # Soft-confidence approvals without a signed Finding are EV-dominated by
+    # REVIEW under residual deny risk (zubalr/tyler payoff discipline).
     conf = float(row.confidence)
-    name = str(row.applicant_name or "").strip().casefold()
-    thin = name in {"", "unknown"} or (
-        visa != "DIP-1" and sponsor in {"", "unknown", "SPN-0000"}
-    )
-    if conf < 0.80 and thin:
-        # Approximate residual: p(APPROVED)=conf, split remainder deny/review.
+    if conf < 0.65:
         p_a = conf
-        p_d = (1.0 - conf) * 0.45
+        p_d = (1.0 - conf) * 0.50
         p_r = 1.0 - p_a - p_d
         ev_approve = (
             _PAYOFF["APPROVED"]["APPROVED"] * p_a
