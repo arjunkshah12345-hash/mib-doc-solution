@@ -3,10 +3,11 @@
 Offline PDF extraction + adjudication for the
 [MIB Doc Challenge](https://github.com/8090-inc/mib-doc-challenge).
 
-**Ship build v42 (transfer-first):** DIP-1/XW-2 layout-consensus only, no
-enumerated train trap phonebooks, emitted-policy guardrail. Targets **private**
-generalization after unofficial board #3 ranked lower-train rivals above v41’s
-**138.086** public peak. See `MEMO.md`, `ATTRIBUTION.md`.
+**Ship build v42.1 (transfer-first):** DIP-1/XW-2 layout-consensus (paid);
+waived LC = DIP-1 only; unsupported-waiver demote; no enumerated train trap
+phonebooks; emitted-policy + EV hedge. Targets **private** generalization after
+unofficial board #3 ranked lower-train rivals above v41’s **138.086** public
+peak. See `MEMO.md`, `ATTRIBUTION.md`.
 
 ## Pipeline
 
