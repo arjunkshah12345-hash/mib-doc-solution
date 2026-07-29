@@ -265,6 +265,11 @@ def apply_hi_res_ocr_repairs(
 ) -> PredictionRow:
     """Conditional hi-res OCR retry for redacted/damaged clean-risk ambiguity."""
 
+    import os
+
+    flag = os.environ.get("MIB_ENABLE_HIRES_OCR", "1").strip().lower()
+    if flag in {"0", "false", "no", "off"}:
+        return row
     visibility = _baseline_visibility_text(pdf_path, baseline_ocr)
     if not _should_hi_res_retry(row, visibility):
         return row
