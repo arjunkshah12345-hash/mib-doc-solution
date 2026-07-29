@@ -16,17 +16,48 @@ risk=none (ablation: 1 gold DEN / 0 AP / 0 true-REVIEW on 71 REVIEW probes).
 Also recovers DIP-1 image-only unpaid denies when native text lacks SAMPLE /
 Fee fields but red-channel OCR reads a SAMPLE DENIAL watermark and no Fee
 Receipt page exists (ablation: MIB-000570 + MIB-000898; 0 CFA / 0 FAP).
+
+Conditional hi-res retry (thegoleffect-style): one 300 DPI grayscale contrast
+pass when risk=none, damage/redaction cues are visible, and adjudication is
+NEEDS_REVIEW or confidence is thin. Recovers risk phrases / Finding lines only;
+never invents APPROVED.
 """
 
 from __future__ import annotations
 
+import difflib
 import io
+import os
 import re
 import subprocess
 import tempfile
 from pathlib import Path
 
 from .models import PredictionRow
+
+_HI_RES_DPI = 300
+_HI_RES_CONFIDENCE_GATE = 0.90
+_DAMAGE_CUES = re.compile(
+    r"\b(?:UNREADABLE|REDACTED|CUT\s+OUT|WHITEOUT|WASHED\s+OUT|"
+    r"PANEL\s+MISSING|REGISTRY\s+LOST)\b",
+    re.I,
+)
+_DISQUALIFYING_RISK = frozenset(
+    {
+        "biohazard_red",
+        "memory_tampering",
+        "active_warrant",
+        "planetary_embargo",
+    }
+)
+_REVIEW_RISK = frozenset(
+    {
+        "identity_conflict",
+        "sponsor_mismatch",
+        "illegible_biometrics",
+        "rescinded_denial",
+    }
+)
 
 _KNOWN_PURPOSES = (
     "reactor maintenance",
@@ -91,6 +122,156 @@ def _ocr_packet(pdf_path: Path, dpi: int = 160) -> str:
                 except (OSError, subprocess.TimeoutExpired):
                     chunks.append("")
         return "\n".join(chunks)
+
+
+def _ocr_packet_high_resolution(pdf_path: Path, dpi: int = _HI_RES_DPI) -> str:
+    """One expensive 300 DPI grayscale contrast pass for redacted/damaged packets.
+
+    Uses pypdfium2 + PIL (no ImageMagick) for Docker portability.
+    """
+
+    cache_root = os.environ.get("MIB_HIRES_OCR_CACHE")
+    cache_file = Path(cache_root, pdf_path.stem + ".txt") if cache_root else None
+    if cache_file and cache_file.exists():
+        return cache_file.read_text(encoding="utf-8", errors="replace")
+
+    try:
+        import pypdfium2 as pdfium
+        from PIL import ImageFilter, ImageOps
+    except ImportError:
+        return ""
+
+    scale = dpi / 72.0
+    chunks: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="mib-hires-") as tmp:
+        work = Path(tmp)
+        try:
+            document = pdfium.PdfDocument(str(pdf_path))
+        except Exception:
+            return ""
+        try:
+            for index in range(len(document)):
+                try:
+                    gray = document[index].render(scale=scale).to_pil().convert("L")
+                except Exception:
+                    chunks.append("")
+                    continue
+                prepared = ImageOps.autocontrast(gray, cutoff=2).filter(
+                    ImageFilter.SHARPEN
+                )
+                out = work / f"page-{index}.png"
+                try:
+                    prepared.save(out)
+                except Exception:
+                    chunks.append("")
+                    continue
+                try:
+                    cp = subprocess.run(
+                        ["tesseract", str(out), "stdout", "--psm", "6"],
+                        capture_output=True,
+                        text=True,
+                        errors="replace",
+                        timeout=30,
+                        check=False,
+                    )
+                    chunks.append(cp.stdout if cp.returncode == 0 else "")
+                except (OSError, subprocess.TimeoutExpired):
+                    chunks.append("")
+        finally:
+            document.close()
+    text = "\f".join(chunks)
+    if cache_file and text.strip():
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(text, encoding="utf-8")
+    return text
+
+
+def _baseline_visibility_text(pdf_path: Path, extra: str = "") -> str:
+    native = _native_pdf_text(pdf_path)
+    layout = ""
+    try:
+        from .arjun_heads import _pdf_layout_text
+
+        layout = _pdf_layout_text(pdf_path)
+    except Exception:
+        pass
+    return f"{native}\n{layout}\n{extra}"
+
+
+def _should_hi_res_retry(row: PredictionRow, visibility_text: str) -> bool:
+    """Gate: clean-risk ambiguity on visibly damaged/redacted packets only."""
+
+    if _norm_risk(row.risk_flags) != "none":
+        return False
+    if not _DAMAGE_CUES.search(visibility_text):
+        return False
+    confidence = float(row.confidence or 0.0)
+    if row.adjudication == "NEEDS_REVIEW":
+        return True
+    if confidence < _HI_RES_CONFIDENCE_GATE:
+        return True
+    return False
+
+
+def _apply_hi_res_text_repairs(row: PredictionRow, text: str) -> PredictionRow:
+    """Field-fill / demote-only repairs from hi-res OCR. Never invents APPROVED."""
+
+    if not text.strip():
+        return row
+    payload = row.to_dict()
+    changed = False
+
+    risk = _risk_tokens(text)
+    if risk and _norm_risk(payload.get("risk_flags")) == "none":
+        payload["risk_flags"] = risk
+        changed = True
+
+    risk_set = set((payload.get("risk_flags") or "none").split("|")) - {"none", ""}
+    if risk_set & _DISQUALIFYING_RISK and payload.get("adjudication") in {
+        "NEEDS_REVIEW",
+        "APPROVED",
+    }:
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = 0.98
+        changed = True
+    elif risk_set & _REVIEW_RISK and payload.get("adjudication") == "APPROVED":
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = min(float(payload.get("confidence") or 0.7), 0.55)
+        changed = True
+
+    if _finding_denied(text) and payload.get("adjudication") != "DENIED":
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = 0.98
+        changed = True
+    elif _finding_needs_review(text) and payload.get("adjudication") == "DENIED":
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = max(float(payload.get("confidence") or 0), 0.85)
+        changed = True
+    elif _finding_needs_review(text) and payload.get("adjudication") == "APPROVED":
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = min(float(payload.get("confidence") or 0.7), 0.55)
+        changed = True
+
+    if not changed:
+        return row
+    return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+
+def apply_hi_res_ocr_repairs(
+    row: PredictionRow,
+    pdf_path: Path,
+    *,
+    baseline_ocr: str = "",
+) -> PredictionRow:
+    """Conditional hi-res OCR retry for redacted/damaged clean-risk ambiguity."""
+
+    visibility = _baseline_visibility_text(pdf_path, baseline_ocr)
+    if not _should_hi_res_retry(row, visibility):
+        return row
+    hi_res = _ocr_packet_high_resolution(pdf_path)
+    if not hi_res.strip():
+        return row
+    return _apply_hi_res_text_repairs(row, hi_res)
 
 
 def _native_pdf_text(pdf_path: Path) -> str:
@@ -396,9 +577,61 @@ def _risk_tokens(text: str) -> str | None:
             flags.append(flag)
     if re.search(r"Registry\s+Status\s*[: ]\s*EMBARGO", text, re.I):
         flags.append("planetary_embargo")
+    for match in re.finditer(r"\bObserved\s+flags?\s*[: ]\s*([^\n]+)", text, re.I):
+        blob = match.group(1).lower().replace(" ", "_")
+        for flag in (
+            "biohazard_red",
+            "memory_tampering",
+            "active_warrant",
+            "planetary_embargo",
+            "illegible_biometrics",
+            "identity_conflict",
+            "sponsor_mismatch",
+            "rescinded_denial",
+        ):
+            if flag in blob and flag not in flags:
+                flags.append(flag)
+        if re.search(r"\bnone\b", match.group(1), re.I):
+            continue
+    for flag in _fuzzy_risk_mentions(text):
+        if flag not in flags:
+            flags.append(flag)
     if not flags:
         return None
     return "|".join(sorted(set(flags)))
+
+
+def _fuzzy_risk_mentions(text: str) -> set[str]:
+    """Recover badly OCRed flag names from flag/reason contexts only."""
+
+    found: set[str] = set()
+    all_flags = (
+        "biohazard_red",
+        "memory_tampering",
+        "active_warrant",
+        "planetary_embargo",
+        "illegible_biometrics",
+        "identity_conflict",
+        "sponsor_mismatch",
+        "rescinded_denial",
+    )
+    for line in text.splitlines():
+        if not re.search(r"\b(?:obs\w*|flags?|risk|reason|finding)\b", line, re.I):
+            continue
+        words = re.findall(r"[A-Za-z]{3,}", line.lower())
+        grams = [
+            "".join(words[index:index + width])
+            for width in (1, 2, 3)
+            for index in range(len(words) - width + 1)
+        ]
+        for flag in all_flags:
+            target = flag.replace("_", "")
+            if any(
+                difflib.SequenceMatcher(None, gram, target).ratio() >= 0.76
+                for gram in grams
+            ):
+                found.add(flag)
+    return found
 
 
 def _norm_risk(value: str | None) -> str:

@@ -45,60 +45,22 @@ _KNOWN_PURPOSES = (
 )
 
 _VISA_CLASSES = frozenset({"XW-1", "XW-2", "DIP-1", "MED-3", "TRANSIT-7"})
-# LC visas: DIP-1/XW-2 (paid) plus MED-3/XW-1 after measured silent-stamp
-# CFA cells were quarantined into ``_LC_TRAP_VISA_PURPOSE_SIG``. Waived LC is
-# gated separately via ``_layout_fee_waived_proven`` / fee_status==waived.
-_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2", "MED-3", "XW-1"})
-_LAYOUT_CONSENSUS_PAID_VISAS = frozenset({"DIP-1", "XW-2", "MED-3", "XW-1"})
-_LAYOUT_CONSENSUS_WAIVED_VISAS = frozenset({"DIP-1", "XW-2", "MED-3", "XW-1"})
+# v42 transfer: LC only for DIP-1 / XW-2. MED-3 / XW-1 silent-stamp packs were
+# the main train→private cliff (enumerated trap cells do not generalize).
+# Clean MED/XW-1 approvals still come from explicit B-13 ``none`` clean-packet
+# heads, not layout-signature promotion.
+_LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})
+_LAYOUT_CONSENSUS_PAID_VISAS = frozenset({"DIP-1", "XW-2"})
+_LAYOUT_CONSENSUS_WAIVED_VISAS = frozenset({"DIP-1", "XW-2"})
 _POLICY = PolicyRuleSet()
 
-# Fail-closed demotion traps: cells that mint false APPROVED under LC.
-# Conservative — never unlocks approvals; only blocks known trap assemblies
-# (silent-stamp CFA and measured false-APPROVED on true REVIEW).
-_LC_TRAP_VISA_PURPOSE: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("DIP-1", "xenobotany"),
-        ("XW-2", "archive audit"),
-    }
-)
-_LC_TRAP_VISA_PURPOSE_SIG: frozenset[tuple[str, str, str]] = frozenset(
-    {
-        # Original DIP/XW-2 paid traps
-        ("DIP-1", "reactor maintenance", "FRI"),
-        ("DIP-1", "archive audit", "FIR"),
-        ("XW-2", "diplomatic", "IFR"),
-        # MED-3/XW-1 paid expand: silent biohazard/memory CFA
-        ("XW-1", "research", "FRI"),
-        ("MED-3", "diplomatic", "IRF"),
-        ("MED-3", "reactor maintenance", "FIR"),
-        ("MED-3", "field repair", "IFR"),
-        ("MED-3", "archive audit", "RFI"),
-        # Waived MED-3/XW-1 CFA
-        ("XW-1", "archive audit", "RFI"),
-        ("MED-3", "transit", "IRF"),
-        ("MED-3", "translation", "IRF"),
-        # Waived FAP (true REVIEW)
-        ("XW-2", "reactor maintenance", "IFR"),
-        ("XW-1", "xenobotany", "RFI"),
-        ("MED-3", "xenobotany", "FIR"),
-    }
-)
-# Waived-only traps: paid path may approve; waived path stays REVIEW.
-# (DIP cultural-exchange/FIR and transit/IFR mix paid gold APPROVED with
-# waived silent-stamp DENIED — trap only the waived arm.)
-_LC_WAIVED_ONLY_TRAP_VISA_PURPOSE_SIG: frozenset[tuple[str, str, str]] = frozenset(
-    {
-        ("DIP-1", "cultural exchange", "FIR"),
-        ("DIP-1", "transit", "IFR"),
-    }
-)
-# Waived-only override: paid path keeps the trap; waived path may approve.
-_LC_WAIVED_TRAP_OVERRIDES: frozenset[tuple[str, str, str]] = frozenset(
-    {
-        ("DIP-1", "reactor maintenance", "FRI"),
-    }
-)
+# Official payoff matrix (evaluate.py classification_points). Used only to
+# demote fragile APPROVED → NEEDS_REVIEW when expected value prefers hedge.
+_PAYOFF = {
+    "APPROVED": {"APPROVED": 8.0, "DENIED": -4.0, "NEEDS_REVIEW": 1.0},
+    "DENIED": {"APPROVED": 0.0, "DENIED": 8.0, "NEEDS_REVIEW": 1.0},
+    "NEEDS_REVIEW": {"APPROVED": 2.0, "DENIED": 2.0, "NEEDS_REVIEW": 8.0},
+}
 
 
 def _pdf_layout_text(pdf_path: Path) -> str:
@@ -484,17 +446,15 @@ def _layout_consensus_trap_cell(
     *,
     fee_waived: bool = False,
 ) -> bool:
-    """True when LC would mint a measured one-way false APPROVED cell."""
+    """True when LC would mint an unsafe APPROVED on structural grounds.
 
-    cell = (visa_class, declared_purpose, signature)
-    if fee_waived and cell in _LC_WAIVED_TRAP_OVERRIDES:
-        return False
-    if fee_waived and cell in _LC_WAIVED_ONLY_TRAP_VISA_PURPOSE_SIG:
-        return True
-    if (visa_class, declared_purpose) in _LC_TRAP_VISA_PURPOSE:
-        return True
-    if cell in _LC_TRAP_VISA_PURPOSE_SIG:
-        return True
+    v42: no enumerated visa×purpose×signature train cells. Only portable
+    structural vetoes remain (transit-purpose on FRI layouts).
+    """
+
+    del visa_class, fee_waived  # LC visa set already gates class; fee via caller
+    # Transit purpose on FRI (fee→registry→intake) layouts concentrates
+    # silent-stamp CFAs across folds — keep REVIEW.
     if signature == "FRI" and declared_purpose == "transit":
         return True
     return False
@@ -585,9 +545,9 @@ def apply_layout_consensus_approval(
 ) -> PredictionRow:
     """Approve clean packets with name consensus + paid ``$809`` or waived fee.
 
-    Visas: DIP-1 / XW-2 / MED-3 / XW-1. Fail-closed on RIF (except field-repair),
-    non-core ``O`` pages, medical-consult, and measured trap cells (silent-stamp
-    CFA / false-APPROVED REVIEW). Waived path does not require ``Amount $809``.
+    Visas: DIP-1 / XW-2 only (v42 — MED-3/XW-1 left to explicit B-13 clean
+    heads). Fail-closed on RIF (except field-repair), non-core ``O`` pages,
+    medical-consult, and FRI+transit. Waived path does not require ``$809``.
     """
 
     if row.adjudication != "NEEDS_REVIEW":
@@ -841,6 +801,103 @@ def _candidate_explicit_risk_none(
         ):
             return True
     return False
+
+
+def apply_emitted_policy_guardrail(row: PredictionRow) -> PredictionRow:
+    """One-way pass: demote APPROVED when serialized fields contradict policy.
+
+    Borrowed in spirit from tylergibbs1's emitted_policy_guardrail — never
+    invents approvals; only makes approvals more conservative after late field
+    repairs. Uses the published payoff matrix to prefer NEEDS_REVIEW when the
+    APPROVED EV is weak under residual uncertainty.
+    """
+
+    if row.adjudication != "APPROVED":
+        return row
+
+    payload = row.to_dict()
+    flags = set(_parse_flag_set(row.risk_flags))
+    visa = str(row.visa_class or "")
+    home = str(row.home_world or "")
+    sponsor = str(row.sponsor_id or "")
+    fee = str(row.fee_status or "")
+    arrival = str(row.arrival_date or "")
+
+    disqualifying = flags & set(_POLICY.disqualifying_flags)
+    review_only = flags & set(_POLICY.review_only_flags)
+
+    if disqualifying or visa == "TRANSIT-7":
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if home in _POLICY.embargoed_worlds and visa != "DIP-1":
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if home in _POLICY.non_diplomatic_embargoed_worlds and visa != "DIP-1":
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if sponsor in _POLICY.barred_sponsors and visa != "DIP-1":
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if fee == "unpaid":
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if fee == "unknown" or review_only:
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    if arrival in {"", "unknown", "1900-01-01"}:
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    # Stale non-diplomatic packets (field manual: arrival before 2026-01-01).
+    if visa != "DIP-1" and re.fullmatch(r"\d{4}-\d{2}-\d{2}", arrival):
+        if arrival < "2026-01-01":
+            payload["adjudication"] = "DENIED"
+            payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+            return PredictionRow.from_mapping(
+                payload, fallback_case_id=row.case_id
+            )
+
+    # EV hedge: if confidence is soft and missing identity fields, REVIEW wins
+    # the published payoff under modest deny risk.
+    conf = float(row.confidence)
+    name = str(row.applicant_name or "").strip().casefold()
+    thin = name in {"", "unknown"} or sponsor in {"", "unknown", "SPN-0000"}
+    if conf < 0.70 and thin:
+        # Approximate residual: p(APPROVED)=conf, split remainder deny/review.
+        p_a = conf
+        p_d = (1.0 - conf) * 0.45
+        p_r = 1.0 - p_a - p_d
+        ev_approve = (
+            _PAYOFF["APPROVED"]["APPROVED"] * p_a
+            + _PAYOFF["APPROVED"]["DENIED"] * p_d
+            + _PAYOFF["APPROVED"]["NEEDS_REVIEW"] * p_r
+        )
+        ev_review = (
+            _PAYOFF["NEEDS_REVIEW"]["APPROVED"] * p_a
+            + _PAYOFF["NEEDS_REVIEW"]["DENIED"] * p_d
+            + _PAYOFF["NEEDS_REVIEW"]["NEEDS_REVIEW"] * p_r
+        )
+        if ev_review > ev_approve:
+            payload["adjudication"] = "NEEDS_REVIEW"
+            payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+            return PredictionRow.from_mapping(
+                payload, fallback_case_id=row.case_id
+            )
+
+    return row
 
 
 def apply_resolved_clean_packet_approval(

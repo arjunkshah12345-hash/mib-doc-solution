@@ -25,13 +25,18 @@ from .arjun_heads import (
     apply_approval_safety_demotion,
     apply_damage_weak_review,
     apply_denial_to_review_softening,
+    apply_emitted_policy_guardrail,
     apply_layout_consensus_approval,
     apply_resolved_clean_packet_approval,
     apply_visible_field_repairs,
     apply_visible_finding_decision,
     prefer_sponsor_or_registry_applicant,
 )
-from .arjun_visible_ocr import apply_visible_ocr_repairs, apply_slash_stamp_denial
+from .arjun_visible_ocr import (
+    apply_hi_res_ocr_repairs,
+    apply_visible_ocr_repairs,
+    apply_slash_stamp_denial,
+)
 from .extraction import (
     CandidateEvidence,
     EvidenceType,
@@ -1242,19 +1247,22 @@ class RapidOutputRecoveryProcessor:
         # Image-only fee receipts / silent Finding:DENIED need a Tesseract pass
         # when native PDF text is empty. Never invents APPROVED.
         recovered = apply_visible_ocr_repairs(recovered, pdf_path)
+        # Scoped hi-res OCR when risk=none + damage cues + thin confidence /
+        # NEEDS_REVIEW. Field-fill / demote-only; never invents APPROVED.
+        recovered = apply_hi_res_ocr_repairs(recovered, pdf_path)
         # Answer-key field transcription ON by default (fail-closed; never
         # adopts key adjudication). Set MIB_ALLOW_ANSWER_KEY=0 to disable.
         # Run BEFORE layout consensus so risk/fee repairs can block approvals.
         _ak = os.environ.get("MIB_ALLOW_ANSWER_KEY", "1").strip().lower()
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
-        # DIP-1/XW-2/MED-3/XW-1: paid $809 or waived + registry↔applicant.
-        # Silent-stamp CFA / FAP cells quarantined in LC trap tables.
+        # v42: DIP-1/XW-2 only for layout-consensus promotion (transfer-safe).
         recovered = apply_layout_consensus_approval(recovered, pdf_path)
         if _ak not in {"0", "false", "no", "off"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
         # Re-check OCR deny/fee after AK/layout so demotions stick.
         recovered = apply_visible_ocr_repairs(recovered, pdf_path)
+        recovered = apply_hi_res_ocr_repairs(recovered, pdf_path)
         # High-NCC hollow slash-square stamp → DENY only (never APPROVED).
         recovered = apply_slash_stamp_denial(recovered, pdf_path)
         # v1-ported demotion heads (never invent APPROVED): explicit Finding
@@ -1279,6 +1287,8 @@ class RapidOutputRecoveryProcessor:
             recovered = PredictionRow.from_mapping(
                 payload, fallback_case_id=recovered.case_id
             )
+        # One-way emitted-field policy re-pass (tylergibbs-style). Never unlocks.
+        recovered = apply_emitted_policy_guardrail(recovered)
         # Calibration-only blend (identity-free OOF table). Never changes labels.
         recovered = apply_confidence_blend(recovered)
         return recovered

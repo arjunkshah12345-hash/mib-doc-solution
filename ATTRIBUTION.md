@@ -1,7 +1,8 @@
 # Attribution & credits
 
-Ship build **v41**: public-train **138.086 / 150**, **CFA = 0**
-(extraction 46.43, classification 73.79, calibration 17.86).
+Ship build **v42 (transfer-first)**. Prior v41 public-train **138.086 / 150**
+(CFA=0) overfit layout-consensus + trap cells and ranked **#5** on unofficial
+private board #3. v42 studies rivals who beat that peak with lower train scores.
 
 This file lists people, projects, and packages we referenced or reused.
 Legal license texts live under `third_party_licenses/`.
@@ -10,12 +11,14 @@ Legal license texts live under `third_party_licenses/`.
 
 | Who | What we took / compared |
 |-----|-------------------------|
-| **[strobl](https://github.com/strobl/mib-doc-solution)** | Primary prior art. Vendored MIT **render-first** offline stack (rasterize → Tesseract → resolve → adjudicate). Our independent re-run: **~130.26 / 150**, CFA=0. |
-| **[thegoleffect](https://github.com/thegoleffect)** | Public write-ups / solution path; competitive ~132-class CFA=0 reference while we were climbing. |
-| **[Abhishek21g](https://github.com/Abhishek21g)** | Closest published rival (~**135.30**, CFA=0). Same broad idea family (AK fields + DIP/XW-2 layout consensus). We used their public claim as the bar we had to clear. |
-| **[afifi-yusuf](https://github.com/afifi-yusuf/mib-doc-solution)** | Narrow fee-token / receipt ideas visible in the public field (also noted by other MIT-derived forks). |
-| **[jay-tau](https://github.com/jay-tau/mib-doc-solution)** | Public strobl-derived fork; useful as another measured transfer-style baseline in the ~127 band. |
-| **Other 8090 entrants** (dw820, mikeg-cerebras, rupaut98, adhyaay-karnwal, naidx0, tcballard, arvindcr4, dumko2001, adityanaidu16, …) | Public memos / scores on the challenge PRs — competitive context only; we did not copy their runtimes. |
+| **[strobl](https://github.com/strobl/mib-doc-solution)** / @SWFactoryGuy | Primary prior art (vendored MIT render-first stack). Rejected 138 answer-key/allowlist peaks; clean finalizer — private #2 on unofficial #3. |
+| **[tylergibbs1](https://github.com/tylergibbs1/mib-doc-challenge-solution)** / @Tylerbryy | Emitted-policy re-pass + OOF/EV discipline — private #1 unofficial #3. We independently added a one-way emitted guardrail. |
+| **[zubalr](https://github.com/zubalr/mib-intake)** / @zubair__ | OOF-first reporting (128.5) + payoff EV — private #3. Informed transfer stance, not copied runtime. |
+| **[thegoleffect](https://github.com/thegoleffect/mib-doc-challenge-solution)** | Scoped hi-res OCR / strong extraction — private #4. |
+| **[Abhishek21g](https://github.com/Abhishek21g)** | Public-train claim **138.62** with disclosed transfer risk; absent from unofficial private top-9 (classic overfit). |
+| **[afifi-yusuf](https://github.com/afifi-yusuf/mib-doc-solution)** | Narrow fee-token / receipt ideas visible in the public field. |
+| **[jay-tau](https://github.com/jay-tau/mib-doc-solution)** | Public strobl-derived fork; transfer-style baseline in the ~127 band. |
+| **Other 8090 entrants** (dw820/@WeiTu_, arvindcr4/@TipsCsharp, rupaut98/@rupakrt, adityanaidu16, …) | Public memos / scores — competitive context only. |
 
 Public write-ups in the field also informed the idea of reading visible
 **SYSTEM / answer-key spans for field repair**. We keep **CFA=0** by
