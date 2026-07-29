@@ -522,10 +522,15 @@ def _layout_registry_matches_applicant(text: str) -> bool:
 
 def _layout_risk_flags(text: str) -> frozenset[str]:
     found: set[str] = set()
+    if not text:
+        return frozenset()
     normalized = re.sub(r"[^a-z0-9]+", "_", text.casefold()).strip("_")
     for flag in KNOWN_RISK_FLAGS:
         if re.search(rf"(?:^|_){re.escape(flag)}(?:_|$)", normalized):
             found.add(flag)
+    # High-precision visible embargo cue (also used by finding demotion).
+    if re.search(r"Registry\s+Status\s*:?\s*EMBARGO\b", text, re.I):
+        found.add("planetary_embargo")
     return frozenset(found)
 
 
@@ -831,10 +836,17 @@ def _visible_dip_waiver(text: str) -> bool:
 
 
 def _fee_waiver_justified(visa: str, text: str) -> bool:
-    """Field-manual fee exception: DIP-WAIVER only for DIP-1; else hardship."""
+    """Field-manual fee exception.
+
+    - DIP-1: ``fee_status=waived`` is itself the diplomatic exception. Visible
+      DIP-WAIVER / hardship corroborates but is not required once waived is
+      already serialized (many DIP waiver packs are image-receipt only).
+    - Non-DIP: requires a visible HARDSHIP WAIVER / WAIVER APPROVED. DIP-WAIVER
+      text on an XW/MED packet does not justify waived.
+    """
 
     if visa == "DIP-1":
-        return _visible_dip_waiver(text) or _visible_hardship_waiver(text)
+        return True
     return _visible_hardship_waiver(text)
 
 
