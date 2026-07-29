@@ -1,8 +1,9 @@
 # Attribution & credits
 
-Ship build **v42 (transfer-first)**. Prior v41 public-train **138.086 / 150**
-(CFA=0) overfit layout-consensus + trap cells and ranked **#5** on unofficial
-private board #3. v42 studies rivals who beat that peak with lower train scores.
+Ship build **v42.5 (transfer-first)**. Demote-pass train **135.29 / 150**
+(CFA=0). Prior v41 public-train **138.086 / 150** (CFA=0) overfit
+layout-consensus + trap cells and ranked **#5** on unofficial private board #3.
+v42.x studies rivals who beat that peak with lower train scores.
 
 This file lists people, projects, and packages we referenced or reused.
 Legal license texts live under `third_party_licenses/`.
