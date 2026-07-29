@@ -759,6 +759,14 @@ def _strip_answer_key_lines(text: str) -> str:
             line,
         ):
             continue
+        # Truncated CSV answer-key fragments without the MIB- id prefix.
+        if re.search(
+            r",\s*(?:none|[a-z_|]+),\s*(?:paid|waived|unpaid|unknown)\s*,\s*"
+            r"(APPROVED|DENIED|NEEDS_REVIEW)\s*,\s*0\.\d+",
+            line,
+            re.I,
+        ):
+            continue
         kept.append(line)
     return "\n".join(kept)
 
@@ -849,12 +857,21 @@ def apply_emitted_policy_guardrail(
     if pdf_path is not None:
         layout = _strip_answer_key_lines(_pdf_layout_text(pdf_path))
 
-    # Signed Finding:APPROVED is highest-precedence visible evidence (tyler).
-    # Soft EV hedges must not overwrite it; hard policy contradictions still
-    # demote because late field repairs can leave an inconsistent row.
-    signed_approve = bool(
-        layout and re.search(r"Finding\s*:?\s*APPROVED\b", layout, re.I)
-    )
+    # Signed manual Finding is highest-precedence visible evidence (tylergibbs1).
+    # Emitted/output-only corrections must not overwrite it — return unchanged.
+    if layout and re.search(r"Finding\s*:?\s*APPROVED\b", layout, re.I):
+        return row
+    if layout and re.search(r"Finding\s*:?\s*DENIED\b", layout, re.I):
+        # Finding:DENIED is applied upstream; if we somehow still APPROVED, deny.
+        payload = row.to_dict()
+        payload["adjudication"] = "DENIED"
+        payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+    if layout and re.search(r"Finding\s*:?\s*NEEDS[_\s]?REVIEW\b", layout, re.I):
+        payload = row.to_dict()
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = max(float(row.confidence), DEMOTION_REVIEW_CONFIDENCE)
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
     payload = row.to_dict()
     flags = set(_parse_flag_set(row.risk_flags))
@@ -937,9 +954,6 @@ def apply_emitted_policy_guardrail(
         payload["adjudication"] = "NEEDS_REVIEW"
         payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
-
-    if signed_approve:
-        return row
 
     # Soft-confidence approvals without a signed Finding are EV-dominated by
     # REVIEW under residual deny risk (zubalr/tyler payoff discipline).
