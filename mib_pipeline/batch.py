@@ -101,6 +101,49 @@ class BatchRunner:
 
     def run(self, input_dir: Path, output_path: Path) -> BatchRunReport:
         pdf_paths = discover_case_pdfs(input_dir)
+        import json as _json
+        import os as _os
+
+        incremental = _os.environ.get("MIB_INCREMENTAL", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if incremental and self._max_workers == 1:
+            # Crash-safe bulk runs: append each row and print progress.
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            rows: list[PredictionRow] = []
+            failures: list[CaseFailure] = []
+            with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+                for index, path in enumerate(pdf_paths, start=1):
+                    result = self._process_one(path)
+                    if result.row is not None:
+                        rows.append(result.row)
+                        handle.write(
+                            _json.dumps(
+                                result.row.to_dict(),
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
+                        )
+                        handle.write("\n")
+                        handle.flush()
+                    if result.failure is not None:
+                        failures.append(result.failure)
+                    if index == 1 or index % 10 == 0 or index == len(pdf_paths):
+                        print(
+                            f"mib-progress {index}/{len(pdf_paths)} "
+                            f"answered={len(rows)} omitted={len(failures)}",
+                            flush=True,
+                        )
+            return BatchRunReport(
+                attempted=len(pdf_paths),
+                answered=len(rows),
+                omitted=len(failures),
+                failures=tuple(failures),
+            )
+
         results = self._process_all(pdf_paths)
         rows = tuple(result.row for result in results if result.row is not None)
         failures = tuple(

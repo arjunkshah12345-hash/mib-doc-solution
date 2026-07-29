@@ -51,7 +51,10 @@ _VISA_CLASSES = frozenset({"XW-1", "XW-2", "DIP-1", "MED-3", "TRANSIT-7"})
 # heads, not layout-signature promotion.
 _LAYOUT_CONSENSUS_VISAS = frozenset({"DIP-1", "XW-2"})
 _LAYOUT_CONSENSUS_PAID_VISAS = frozenset({"DIP-1", "XW-2"})
-_LAYOUT_CONSENSUS_WAIVED_VISAS = frozenset({"DIP-1", "XW-2"})
+# Waived fee is only policy-complete for DIP-1 (or a visible hardship waiver).
+# XW-2 waived without hardship is tyler's ``unsupported_fee_waiver`` REVIEW cell
+# and a common private CFA source when LC treats waived like paid.
+_LAYOUT_CONSENSUS_WAIVED_VISAS = frozenset({"DIP-1"})
 _POLICY = PolicyRuleSet()
 
 # Official payoff matrix (evaluate.py classification_points). Used only to
@@ -803,7 +806,22 @@ def _candidate_explicit_risk_none(
     return False
 
 
-def apply_emitted_policy_guardrail(row: PredictionRow) -> PredictionRow:
+def _visible_hardship_or_dip_waiver(text: str) -> bool:
+    """True when layout shows a hardship waiver or DIP-WAIVER code."""
+
+    if not text:
+        return False
+    if re.search(r"HARDSHIP\s+WAIVER|WAIVER\s+APPROVED", text, re.I):
+        return True
+    if re.search(r"DIP[\s\-]?WAIVER", text, re.I):
+        return True
+    return False
+
+
+def apply_emitted_policy_guardrail(
+    row: PredictionRow,
+    pdf_path: Path | None = None,
+) -> PredictionRow:
     """One-way pass: demote APPROVED when serialized fields contradict policy.
 
     Borrowed in spirit from tylergibbs1's emitted_policy_guardrail — never
@@ -814,6 +832,17 @@ def apply_emitted_policy_guardrail(row: PredictionRow) -> PredictionRow:
 
     if row.adjudication != "APPROVED":
         return row
+
+    layout = ""
+    if pdf_path is not None:
+        layout = _strip_answer_key_lines(_pdf_layout_text(pdf_path))
+
+    # Signed Finding:APPROVED is highest-precedence visible evidence (tyler).
+    # Soft EV hedges must not overwrite it; hard policy contradictions still
+    # demote because late field repairs can leave an inconsistent row.
+    signed_approve = bool(
+        layout and re.search(r"Finding\s*:?\s*APPROVED\b", layout, re.I)
+    )
 
     payload = row.to_dict()
     flags = set(_parse_flag_set(row.risk_flags))
@@ -846,12 +875,23 @@ def apply_emitted_policy_guardrail(row: PredictionRow) -> PredictionRow:
         payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
-    if fee == "unpaid":
+    if fee == "unpaid" and not _visible_hardship_or_dip_waiver(layout):
         payload["adjudication"] = "DENIED"
         payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
     if fee == "unknown" or review_only:
+        payload["adjudication"] = "NEEDS_REVIEW"
+        payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
+        return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
+
+    # Non-DIP waived without visible hardship/DIP-WAIVER → REVIEW (portable
+    # unsupported_fee_waiver gate; private leaders enforce this).
+    if (
+        fee == "waived"
+        and visa != "DIP-1"
+        and not _visible_hardship_or_dip_waiver(layout)
+    ):
         payload["adjudication"] = "NEEDS_REVIEW"
         payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
@@ -870,12 +910,17 @@ def apply_emitted_policy_guardrail(row: PredictionRow) -> PredictionRow:
                 payload, fallback_case_id=row.case_id
             )
 
-    # EV hedge: if confidence is soft and missing identity fields, REVIEW wins
-    # the published payoff under modest deny risk.
+    if signed_approve:
+        return row
+
+    # EV hedge (zubalr/tyler payoff discipline): soft confidence + thin
+    # identity → REVIEW beats APPROVED under residual deny risk.
     conf = float(row.confidence)
     name = str(row.applicant_name or "").strip().casefold()
-    thin = name in {"", "unknown"} or sponsor in {"", "unknown", "SPN-0000"}
-    if conf < 0.70 and thin:
+    thin = name in {"", "unknown"} or (
+        visa != "DIP-1" and sponsor in {"", "unknown", "SPN-0000"}
+    )
+    if conf < 0.80 and thin:
         # Approximate residual: p(APPROVED)=conf, split remainder deny/review.
         p_a = conf
         p_d = (1.0 - conf) * 0.45

@@ -1288,7 +1288,7 @@ class RapidOutputRecoveryProcessor:
                 payload, fallback_case_id=recovered.case_id
             )
         # One-way emitted-field policy re-pass (tylergibbs-style). Never unlocks.
-        recovered = apply_emitted_policy_guardrail(recovered)
+        recovered = apply_emitted_policy_guardrail(recovered, pdf_path)
         # Calibration-only blend (identity-free OOF table). Never changes labels.
         recovered = apply_confidence_blend(recovered)
         return recovered
