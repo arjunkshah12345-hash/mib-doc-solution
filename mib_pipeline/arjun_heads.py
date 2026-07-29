@@ -806,16 +806,28 @@ def _candidate_explicit_risk_none(
     return False
 
 
-def _visible_hardship_or_dip_waiver(text: str) -> bool:
-    """True when layout shows a hardship waiver or DIP-WAIVER code."""
+def _visible_hardship_waiver(text: str) -> bool:
+    """True when layout shows a hardship waiver (non-DIP fee exception)."""
 
     if not text:
         return False
-    if re.search(r"HARDSHIP\s+WAIVER|WAIVER\s+APPROVED", text, re.I):
-        return True
-    if re.search(r"DIP[\s\-]?WAIVER", text, re.I):
-        return True
-    return False
+    return bool(re.search(r"HARDSHIP\s+WAIVER|WAIVER\s+APPROVED", text, re.I))
+
+
+def _visible_dip_waiver(text: str) -> bool:
+    """True when layout shows a DIP-WAIVER code (diplomatic fee exception)."""
+
+    if not text:
+        return False
+    return bool(re.search(r"DIP[\s\-]?WAIVER", text, re.I))
+
+
+def _fee_waiver_justified(visa: str, text: str) -> bool:
+    """Field-manual fee exception: DIP-WAIVER only for DIP-1; else hardship."""
+
+    if visa == "DIP-1":
+        return _visible_dip_waiver(text) or _visible_hardship_waiver(text)
+    return _visible_hardship_waiver(text)
 
 
 def apply_emitted_policy_guardrail(
@@ -875,7 +887,7 @@ def apply_emitted_policy_guardrail(
         payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
-    if fee == "unpaid" and not _visible_hardship_or_dip_waiver(layout):
+    if fee == "unpaid" and not _fee_waiver_justified(visa, layout):
         payload["adjudication"] = "DENIED"
         payload["confidence"] = DEMOTION_DENIAL_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
@@ -885,13 +897,9 @@ def apply_emitted_policy_guardrail(
         payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
-    # Non-DIP waived without visible hardship/DIP-WAIVER → REVIEW (portable
-    # unsupported_fee_waiver gate; private leaders enforce this).
-    if (
-        fee == "waived"
-        and visa != "DIP-1"
-        and not _visible_hardship_or_dip_waiver(layout)
-    ):
+    # Non-DIP waived without visible HARDSHIP waiver → REVIEW.
+    # DIP-WAIVER text on an XW/MED packet does NOT justify waived (tyler gate).
+    if fee == "waived" and not _fee_waiver_justified(visa, layout):
         payload["adjudication"] = "NEEDS_REVIEW"
         payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
