@@ -1250,15 +1250,15 @@ class RapidOutputRecoveryProcessor:
         # Scoped hi-res OCR when risk=none + damage cues + thin confidence /
         # NEEDS_REVIEW. Field-fill / demote-only; never invents APPROVED.
         recovered = apply_hi_res_ocr_repairs(recovered, pdf_path)
-        # Answer-key field transcription ON by default (fail-closed; never
-        # adopts key adjudication). Set MIB_ALLOW_ANSWER_KEY=0 to disable.
-        # Run BEFORE layout consensus so risk/fee repairs can block approvals.
-        _ak = os.environ.get("MIB_ALLOW_ANSWER_KEY", "1").strip().lower()
-        if _ak not in {"0", "false", "no", "off"}:
+        # Answer-key field transcription OFF by default for private transfer.
+        # Planted AK lines are absent or adversarial on holdout/private; enabling
+        # is opt-in via MIB_ALLOW_ANSWER_KEY=1 (still never adopts key adjudication).
+        _ak = os.environ.get("MIB_ALLOW_ANSWER_KEY", "0").strip().lower()
+        if _ak in {"1", "true", "yes", "on"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
         # v42: DIP-1/XW-2 only for layout-consensus promotion (transfer-safe).
         recovered = apply_layout_consensus_approval(recovered, pdf_path)
-        if _ak not in {"0", "false", "no", "off"}:
+        if _ak in {"1", "true", "yes", "on"}:
             recovered = apply_answer_key_transcription(recovered, pdf_path)
         # Re-check OCR deny/fee after AK/layout so demotions stick.
         recovered = apply_visible_ocr_repairs(recovered, pdf_path)

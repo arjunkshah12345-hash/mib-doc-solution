@@ -3,12 +3,11 @@
 Offline PDF extraction + adjudication for the
 [MIB Doc Challenge](https://github.com/8090-inc/mib-doc-challenge).
 
-**Ship build v42.6 (tyler clerk + edge):** emitted-policy guardrail + Finding
-stamp wins; DIP-1 redacted-name keep; non-DIP waived via hardship **or**
-visible DIP-WAIVER+$0 receipt; widened hi-res risk OCR; Docker HIRES on.
-Demote-pass train **136.36 / 150 CFA=0** (above tyler ~134.5). Targets
-**private** generalization after unofficial board #3 ranked lower-train rivals
-above v41’s **138.086** public peak. See `MEMO.md`, `ATTRIBUTION.md`.
+**Ship build v42.7 (private-first freeze):** clerk demote + Finding wins; DIP
+redacted-name keep; DIP-WAIVER+$0 only after holdout CFA=0 check; **answer-key
+OFF by default**; hi-res OCR on in Docker. Demote-pass train **136.36 / 150
+CFA=0**. Optimize for **private** transfer (tyler’s new OCR audit ~134.7 is the
+bar), not train-max. See `MEMO.md`, `ATTRIBUTION.md`.
 
 ## Pipeline
 
