@@ -1,63 +1,52 @@
-FROM python:3.12.11-slim-bookworm
+FROM python:3.11-slim
 
-ARG APP_UID=10001
-ARG APP_GID=10001
+# System libs for OpenCV (pulled in by RapidOCR) on a slim base.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
 
-# Keep every common native/Python thread pool inside the four-vCPU scoring limit.
-# Python bytecode and user caches are disabled because the container root is
-# read-only at runtime. Any future scratch data belongs under /tmp.
-ENV BLIS_NUM_THREADS=4 \
-    HOME=/tmp \
-    MALLOC_ARENA_MAX=4 \
-    MIB_ALLOW_ANSWER_KEY=0 \
-    MIB_ENABLE_HIRES_OCR=1 \
-    MIB_MAX_WORKERS=4 \
-    MKL_NUM_THREADS=4 \
-    NUMEXPR_NUM_THREADS=4 \
-    OC_DISABLE_DOT_ACCESS_WARNING=1 \
-    OMP_NUM_THREADS=4 \
-    OPENBLAS_NUM_THREADS=4 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    TMPDIR=/tmp \
-    TOKENIZERS_PARALLELISM=false \
-    VECLIB_MAXIMUM_THREADS=4
+# Offline runtime: all dependencies and OCR models are baked into the image.
+# No LLM/VLM, no torch/paddle; nothing here follows instructions, so the
+# injection surface the dataset targets does not exist in this system.
+# Every resolved Python distribution is pinned to the version in the retained,
+# score-validated image. In particular, RapidOCR and ONNX Runtime otherwise
+# leave most of their dependency graph floating; a clean rebuild could silently
+# change image preprocessing, model execution, or serialization behavior.
+RUN pip install --no-cache-dir \
+    coloredlogs==15.0.1 \
+    flatbuffers==25.12.19 \
+    humanfriendly==10.0 \
+    mpmath==1.3.0 \
+    pymupdf==1.28.0 \
+    rapidocr-onnxruntime==1.4.4 \
+    onnxruntime==1.20.1 \
+    rapidfuzz==3.14.5 \
+    numpy==2.2.6 \
+    opencv-python==4.11.0.86 \
+    packaging==26.2 \
+    pillow==12.3.0 \
+    protobuf==7.35.1 \
+    pyclipper==1.4.0 \
+    PyYAML==6.0.3 \
+    shapely==2.1.2 \
+    six==1.17.0 \
+    sympy==1.14.0 \
+    tqdm==4.69.1
 
 WORKDIR /app
+# Keep the copied application closure source-only. The upstream baseline image
+# generated /app bytecode during its build; M0 records that historical state,
+# while new candidate images avoid untracked executable copies.
+ENV PYTHONDONTWRITEBYTECODE=1
+COPY mib/ /app/mib/
+COPY models/ /app/models/
+COPY scripts/predict.py scripts/run_shard.py /app/scripts/
+COPY run.sh /app/run.sh
+RUN chmod +x /app/run.sh
 
-ARG TESSERACT_VERSION=5.3.0-2
-ARG TESSERACT_DATA_VERSION=1:4.1.0-2
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends \
-      "tesseract-ocr=${TESSERACT_VERSION}" \
-      "tesseract-ocr-eng=${TESSERACT_DATA_VERSION}" \
-      "tesseract-ocr-osd=${TESSERACT_DATA_VERSION}" \
-    && rm -rf /var/lib/apt/lists/*
+# Trigger RapidOCR model unpack at build time so runtime needs no writes
+# outside /tmp, then verify the pipeline imports cleanly.
+RUN python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()" && \
+    python -c "import sys; sys.path.insert(0, '/app'); import mib.pipeline"
 
-COPY requirements.lock /app/requirements.lock
-RUN python3 -m pip install \
-      --disable-pip-version-check \
-      --no-cache-dir \
-      --no-deps \
-      --require-hashes \
-      --requirement /app/requirements.lock \
-    && groupadd --gid "${APP_GID}" mib \
-    && useradd \
-      --uid "${APP_UID}" \
-      --gid "${APP_GID}" \
-      --home-dir /tmp \
-      --no-create-home \
-      --shell /usr/sbin/nologin \
-      mib
-
-COPY run.sh solution.py /app/
-COPY mib_pipeline /app/mib_pipeline
-COPY third_party_licenses /app/third_party_licenses
-RUN chmod 0555 /app/run.sh /app/solution.py \
-    && chmod -R a=rX /app/mib_pipeline \
-    && chmod -R a=rX /app/third_party_licenses \
-    && chmod 0444 /app/requirements.lock
-
-USER mib:mib
-
+ENV TMPDIR=/tmp
 ENTRYPOINT ["/app/run.sh"]
