@@ -783,7 +783,11 @@ def main():
         ),
     )
 
-    workers = min(4, os.cpu_count() or 1)
+    # Cap via MIB_MAX_WORKERS for memory-constrained local regen (Docker
+    # contract still defaults to min(4, ncpu) when unset).
+    workers = min(int(os.environ.get("MIB_MAX_WORKERS", "4")),
+                  os.cpu_count() or 1)
+    workers = max(1, workers)
     tmp = Path(tempfile.mkdtemp(prefix="mib-", dir=os.environ.get("TMPDIR", "/tmp")))
     out = Path(output_path)
     prepared_receipt = None

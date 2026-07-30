@@ -16,6 +16,8 @@ export MIB_REVIEW_MODEL="${MIB_REVIEW_MODEL:-1}"
 # Private edge (arjunkshah): require a small EV margin before the resolver may
 # mint APPROVED from insufficient_evidence (upstream memo: that path drives CFA).
 export MIB_REVIEW_MARGIN="${MIB_REVIEW_MARGIN:-0.35}"
+# Private CFA insurance: demote APPROVED below this confidence to NEEDS_REVIEW.
+export MIB_MIN_APPROVE_CONF="${MIB_MIN_APPROVE_CONF:-0.70}"
 
 # shellcheck disable=SC1091
 # Ensure private_edge defaults are visible to Python even if margin unset above.

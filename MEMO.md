@@ -17,6 +17,9 @@ Upstream’s own memo ties catastrophic false approvals to score-optimal
 2. `mib/private_edge.py` — one-way emitted-field demote (disqualifying risk,
    barred sponsor, soft embargo, unpaid, unknown fee / review flags). Never
    invents APPROVED.
+3. `MIB_MIN_APPROVE_CONF=0.70` — demote remaining mid-confidence APPROVED to
+   NEEDS_REVIEW. On public train this cuts CFA 9→0 (score ~134.6→~130.8) by
+   hedging missed-flag OCR misses that margin alone did not catch.
 
 No trap lists, no answer-key channel, no copied validation predictions.
 

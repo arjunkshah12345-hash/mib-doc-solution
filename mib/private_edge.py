@@ -86,6 +86,19 @@ def apply_emitted_demote(prediction: dict) -> dict:
         out["confidence"] = min(float(out.get("confidence") or 0.55), 0.55)
         return out
 
+    # Floor: missed disqualifying flags / fee OCR still leave medium-confidence
+    # false APPROVED on train (9 CFAs @ margin 0.35). Require stronger confidence
+    # before emitting APPROVED — private transfer over public train points.
+    try:
+        min_conf = float(os.environ.get("MIB_MIN_APPROVE_CONF", "0.70"))
+    except ValueError:
+        min_conf = 0.70
+    conf = float(out.get("confidence") or 0.0)
+    if conf < min_conf:
+        out["adjudication"] = "NEEDS_REVIEW"
+        out["confidence"] = min(conf if conf > 0 else 0.55, 0.55)
+        return out
+
     return out
 
 
@@ -100,3 +113,4 @@ def configure_private_defaults() -> None:
     os.environ.setdefault("MIB_REVIEW_MARGIN", "0.35")
     # Keep their OCR path on; never enable answer-key style channels here.
     os.environ.setdefault("MIB_REVIEW_MODEL", "1")
+    os.environ.setdefault("MIB_MIN_APPROVE_CONF", "0.70")
