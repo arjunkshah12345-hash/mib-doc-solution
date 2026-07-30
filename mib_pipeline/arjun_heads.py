@@ -838,16 +838,21 @@ def _visible_dip_waiver(text: str) -> bool:
 def _fee_waiver_justified(visa: str, text: str) -> bool:
     """Field-manual fee exception.
 
-    - DIP-1: ``fee_status=waived`` is itself the diplomatic exception. Visible
-      DIP-WAIVER / hardship corroborates but is not required once waived is
-      already serialized (many DIP waiver packs are image-receipt only).
-    - Non-DIP: requires a visible HARDSHIP WAIVER / WAIVER APPROVED. DIP-WAIVER
-      text on an XW/MED packet does not justify waived.
+    - DIP-1: ``fee_status=waived`` is itself the diplomatic exception.
+    - Non-DIP: visible HARDSHIP / WAIVER APPROVED, or a fee-receipt DIP-WAIVER
+      stamp paired with a $0 waived amount (train-visible waiver channel;
+      still never unlocks APPROVED from unpaid).
     """
 
     if visa == "DIP-1":
         return True
-    return _visible_hardship_waiver(text)
+    if _visible_hardship_waiver(text):
+        return True
+    if _visible_dip_waiver(text) and re.search(
+        r"Amount\s*\$?\s*0(?:\.00)?\b", text or "", re.I
+    ):
+        return True
+    return False
 
 
 def apply_emitted_policy_guardrail(
@@ -892,6 +897,43 @@ def apply_emitted_policy_guardrail(
     sponsor = str(row.sponsor_id or "")
     fee = str(row.fee_status or "")
     arrival = str(row.arrival_date or "")
+
+    # Tyler edge: repair placeholder sponsors from visible layout before
+    # fail-closed demotion. SPN-0000 is an extraction miss, not proof of
+    # missing sponsorship — fill from the page when a single SPN-#### is clear.
+    if layout and sponsor in {"", "unknown", "SPN-0000"}:
+        found = sorted(set(re.findall(r"\bSPN[-\s]?\d{4}\b", layout, re.I)))
+        cleaned: list[str] = []
+        for raw in found:
+            digits = re.sub(r"\D", "", raw)[-4:]
+            if len(digits) == 4 and digits != "0000":
+                cleaned.append(f"SPN-{digits}")
+        cleaned = sorted(set(cleaned))
+        if len(cleaned) == 1:
+            sponsor = cleaned[0]
+            payload["sponsor_id"] = sponsor
+        elif pdf_path is not None and not cleaned:
+            # Image-only sponsor letters: one cheap OCR pass for SPN-####.
+            import os
+            if os.environ.get("MIB_SKIP_SPONSOR_OCR", "").strip().lower() in {"1","true","yes","on"}:
+                ocr_text = ""
+            else:
+                try:
+                    from .arjun_visible_ocr import _ocr_packet
+
+                    ocr_text = _ocr_packet(Path(pdf_path), dpi=160)
+                except Exception:
+                    ocr_text = ""
+            ocr_found = sorted(set(re.findall(r"\bSPN[-\s]?\d{4}\b", ocr_text, re.I)))
+            ocr_cleaned: list[str] = []
+            for raw in ocr_found:
+                digits = re.sub(r"\D", "", raw)[-4:]
+                if len(digits) == 4 and digits != "0000":
+                    ocr_cleaned.append(f"SPN-{digits}")
+            ocr_cleaned = sorted(set(ocr_cleaned))
+            if len(ocr_cleaned) == 1:
+                sponsor = ocr_cleaned[0]
+                payload["sponsor_id"] = sponsor
 
     disqualifying = flags & set(_POLICY.disqualifying_flags)
     review_only = flags & set(_POLICY.review_only_flags)
@@ -961,16 +1003,37 @@ def apply_emitted_policy_guardrail(
             )
 
     # Never leave APPROVED with an unread applicant identity.
-    name = str(row.applicant_name or "").strip().casefold()
-    if name in {"", "unknown"}:
+    # DIP-1 packets often redact the name while still carrying a signed
+    # diplomatic waiver / fee proof — park non-DIP unknowns in REVIEW, but do
+    # not demote a clean DIP-1 solely for a redacted name (tyler-visible fee).
+    name = str(payload.get("applicant_name") or row.applicant_name or "").strip().casefold()
+    if name in {"", "unknown"} and visa != "DIP-1":
         payload["adjudication"] = "NEEDS_REVIEW"
         payload["confidence"] = DEMOTION_REVIEW_CONFIDENCE
         return PredictionRow.from_mapping(payload, fallback_case_id=row.case_id)
 
     # Soft-confidence approvals without a signed Finding are EV-dominated by
     # REVIEW under residual deny risk (zubalr/tyler payoff discipline).
+    # Edge vs tyler: do NOT soft-demote when the packet already shows explicit
+    # Observed/risk flags: none plus fee proof — that visible evidence is the
+    # trust boundary; model confidence alone should not override it.
     conf = float(row.confidence)
     if conf < 0.65:
+        explicit_clean = bool(
+            layout
+            and re.search(
+                r"(?:Observed\s+)?(?:risk\s+)?flags?\s*[:#=.-]?\s*none\b",
+                layout,
+                re.I,
+            )
+        )
+        fee_proven = False
+        if fee == "paid":
+            fee_proven = bool(re.search(r"Amount\s*\$?\s*809", layout or "", re.I))
+        elif fee == "waived":
+            fee_proven = _fee_waiver_justified(visa, layout or "")
+        if explicit_clean and fee_proven:
+            return row
         p_a = conf
         p_d = (1.0 - conf) * 0.50
         p_r = 1.0 - p_a - p_d

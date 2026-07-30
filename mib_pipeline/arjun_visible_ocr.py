@@ -198,18 +198,36 @@ def _baseline_visibility_text(pdf_path: Path, extra: str = "") -> str:
     return f"{native}\n{layout}\n{extra}"
 
 
+_RISK_PAGE_CUES = re.compile(
+    r"\b(?:B-?13|Biometric|Registry|Observed\s+flags?|Risk\s+flags?|"
+    r"Finding\s*:|Manual\s+Adjudicator|SCAN\s+TAB)\b",
+    re.I,
+)
+
+
 def _should_hi_res_retry(row: PredictionRow, visibility_text: str) -> bool:
-    """Gate: clean-risk ambiguity on visibly damaged/redacted packets only."""
+    """Gate: clean-risk rows that may still hide image-only stamps."""
 
     if _norm_risk(row.risk_flags) != "none":
         return False
-    if not _DAMAGE_CUES.search(visibility_text):
-        return False
     confidence = float(row.confidence or 0.0)
-    if row.adjudication == "NEEDS_REVIEW":
-        return True
-    if confidence < _HI_RES_CONFIDENCE_GATE:
-        return True
+    damaged = bool(_DAMAGE_CUES.search(visibility_text))
+    risk_pages = bool(_RISK_PAGE_CUES.search(visibility_text))
+    has_risk_token = _risk_tokens(visibility_text) is not None
+
+    # REVIEW / DENIED with empty risk: stamp OCR can still recover flags.
+    if row.adjudication in {"NEEDS_REVIEW", "DENIED"}:
+        if damaged or risk_pages or not has_risk_token:
+            return True
+        return confidence < 0.95
+    # APPROVED with none: only spend hi-res when damage or risk pages lack tokens.
+    if row.adjudication == "APPROVED":
+        if damaged:
+            return True
+        if risk_pages and not has_risk_token:
+            return True
+        if confidence < _HI_RES_CONFIDENCE_GATE:
+            return True
     return False
 
 
