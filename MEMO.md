@@ -29,3 +29,9 @@ Unofficial private favored OCR-disciplined ~134-class systems over train-max
 138. Copying the audited OCR clerk and only tightening CFA-sensitive approvals
 is the fastest private-first move. Soft floor 0.62 lands ~133.5 CFA=3 —
 in the winning band, with far fewer CFAs than Moonshots' score-optimal ~12.
+
+## Validation receipt (v43.2)
+
+- Generated 2026-07-31 from the shipped Moonshots runtime + private edges
+- `predictions.jsonl` SHA-256: `ebfbe5e25fa2dad08a89083a63b5fd502b2c42800daa90917284616889eeb03f`
+- 5000/5000 cases; approve-floor and emitted demote applied to match `run.sh`
