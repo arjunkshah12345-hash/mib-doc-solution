@@ -1,16 +1,32 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
-# System libs for OpenCV (pulled in by RapidOCR) on a slim base.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
+ENV BLIS_NUM_THREADS=2 \
+    HOME=/tmp \
+    MALLOC_ARENA_MAX=4 \
+    MIB_MAX_WORKERS=2 \
+    MIB_GRAFT_CONF_MAX=0.913 \
+    MIB_NATIVE_SCAN_OCR=1 \
+    MIB_REVIEW_MODEL=1 \
+    MIB_REVIEW_MARGIN=0.35 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=2 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TMPDIR=/tmp \
+    TOKENIZERS_PARALLELISM=false
 
-# Offline runtime: all dependencies and OCR models are baked into the image.
-# No LLM/VLM, no torch/paddle; nothing here follows instructions, so the
-# injection surface the dataset targets does not exist in this system.
-# Every resolved Python distribution is pinned to the version in the retained,
-# score-validated image. In particular, RapidOCR and ONNX Runtime otherwise
-# leave most of their dependency graph floating; a clean rebuild could silently
-# change image preprocessing, model execution, or serialization behavior.
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+      tesseract-ocr tesseract-ocr-eng \
+      poppler-utils \
+      libgl1 libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Moonshots OCR stack + Strobl runtime deps (pypdfium2 / rapidocr 3 / pillow / numpy).
 RUN pip install --no-cache-dir \
     coloredlogs==15.0.1 \
     flatbuffers==25.12.19 \
@@ -22,6 +38,7 @@ RUN pip install --no-cache-dir \
     rapidfuzz==3.14.5 \
     numpy==2.2.6 \
     opencv-python==4.11.0.86 \
+    opencv-python-headless==4.11.0.86 \
     packaging==26.2 \
     pillow==12.3.0 \
     protobuf==7.35.1 \
@@ -30,23 +47,24 @@ RUN pip install --no-cache-dir \
     shapely==2.1.2 \
     six==1.17.0 \
     sympy==1.14.0 \
-    tqdm==4.69.1
+    tqdm==4.69.1 \
+    pypdfium2==5.11.0 \
+    rapidocr==3.9.2 \
+    colorlog==6.11.0 \
+    omegaconf==2.3.0
 
-WORKDIR /app
-# Keep the copied application closure source-only. The upstream baseline image
-# generated /app bytecode during its build; M0 records that historical state,
-# while new candidate images avoid untracked executable copies.
-ENV PYTHONDONTWRITEBYTECODE=1
-COPY mib/ /app/mib/
-COPY models/ /app/models/
+COPY run.sh solution.py /app/
+COPY mib /app/mib
+COPY models /app/models
+COPY mib_pipeline /app/mib_pipeline
 COPY scripts/predict.py scripts/run_shard.py /app/scripts/
-COPY run.sh /app/run.sh
-RUN chmod +x /app/run.sh
+COPY third_party_licenses /app/third_party_licenses
+COPY LICENSE ATTRIBUTION.md MEMO.md /app/
 
-# Trigger RapidOCR model unpack at build time so runtime needs no writes
-# outside /tmp, then verify the pipeline imports cleanly.
-RUN python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()" && \
-    python -c "import sys; sys.path.insert(0, '/app'); import mib.pipeline"
+RUN chmod 0555 /app/run.sh /app/solution.py \
+    && chmod -R a=rX /app/mib /app/models /app/mib_pipeline /app/scripts \
+    && python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()" \
+    && python -c "import mib.pipeline; import mib_pipeline.graft"
 
-ENV TMPDIR=/tmp
+USER root
 ENTRYPOINT ["/app/run.sh"]
