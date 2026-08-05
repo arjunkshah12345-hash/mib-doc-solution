@@ -2,7 +2,7 @@
 
 ## Solution
 - Repo: https://github.com/arjunkshah12345-hash/mib-doc-solution
-- Tip: Moonshots + Strobl + thegoleffect graft (demote ≤0.913, Strobl promote ≥0.90, Gole fields + dual-DENIED + Gole promote ≥0.90)
+- Tip: `4d312b8` — Moonshots + Strobl + thegoleffect graft (demote ≤0.913, Strobl promote ≥0.90, Gole fields + dual-DENIED + Gole promote ≥0.90)
 - Runtime: `run.sh` → `solution.py` (triple clerk, parallel Moonshots/Gole)
 
 ## Public train (official evaluate.py)
