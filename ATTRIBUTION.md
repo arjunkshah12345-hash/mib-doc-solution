@@ -23,15 +23,20 @@ pipeline (`strobl/mib-doc-solution`, recovery branch). Used here only as an
 independent second opinion for the graft demote — never as a copied prediction
 file.
 
+## thegoleffect third clerk
+
+`clerks/goleffect/solution.py` is vendored under MIT from
+[`thegoleffect/mib-doc-challenge-solution`](https://github.com/thegoleffect/mib-doc-challenge-solution).
+Used for scored-field candidates plus CFA-safe dual-DENIED / high-conf
+promote gates — never as a copied validation prediction file.
+
 ## Local private-transfer delta (arjunkshah12345-hash)
 
-Dual-pipeline graft entrypoint (`solution.py` + `mib_pipeline/graft.py`):
+Triple-pipeline graft (`solution.py` + `mib_pipeline/graft.py`):
 
 - Moonshots/tyler OCR for fields + base adjudication
-- Strobl pipeline as disagreeing second clerk
-- Demote hybrid `APPROVED` when Strobl is `DENIED` (any confidence), or when
-  Strobl is `NEEDS_REVIEW` and confidence ≤ 0.913
-- Promote hybrid `NEEDS_REVIEW` when Strobl is `APPROVED` with confidence ≥ 0.90
+- Strobl as disagreeing second clerk (demote ≤0.913 / promote ≥0.90)
+- Gole fields + dual-DENIED + Gole promote ≥0.90
 - No answer-key channel; no case-ID lists
 
 No other participant's validation prediction file was copied. Predictions for

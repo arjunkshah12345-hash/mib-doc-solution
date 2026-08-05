@@ -57,12 +57,13 @@ COPY run.sh solution.py /app/
 COPY mib /app/mib
 COPY models /app/models
 COPY mib_pipeline /app/mib_pipeline
+COPY clerks /app/clerks
 COPY scripts/predict.py scripts/run_shard.py /app/scripts/
 COPY third_party_licenses /app/third_party_licenses
 COPY LICENSE ATTRIBUTION.md MEMO.md /app/
 
 RUN chmod 0555 /app/run.sh /app/solution.py \
-    && chmod -R a=rX /app/mib /app/models /app/mib_pipeline /app/scripts \
+    && chmod -R a=rX /app/mib /app/models /app/mib_pipeline /app/clerks /app/scripts \
     && python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()" \
     && python -c "import mib.pipeline; import mib_pipeline.graft"
 

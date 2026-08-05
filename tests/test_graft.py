@@ -82,3 +82,39 @@ def test_promote_disabled():
     st = _row("APPROVED", 0.95)
     out = graft_row(hy, st, allow_promote=False)
     assert out["adjudication"] == "NEEDS_REVIEW"
+
+
+def test_gole_fields_overwrite():
+    hy = _row("NEEDS_REVIEW", 0.4)
+    st = _row("NEEDS_REVIEW", 0.4)
+    go = _row("NEEDS_REVIEW", 0.4)
+    go["fee_status"] = "waived"
+    go["species_code"] = "JOVIAN_GASFORM"
+    out = graft_row(hy, st, go)
+    assert out["fee_status"] == "waived"
+    assert out["species_code"] == "JOVIAN_GASFORM"
+
+
+def test_gole_dual_denied():
+    hy = _row("NEEDS_REVIEW", 0.4)
+    st = _row("DENIED", 0.6)
+    go = _row("DENIED", 0.55)
+    out = graft_row(hy, st, go)
+    assert out["adjudication"] == "DENIED"
+
+
+def test_gole_high_conf_promote():
+    hy = _row("NEEDS_REVIEW", 0.4)
+    st = _row("NEEDS_REVIEW", 0.3)
+    go = _row("APPROVED", 0.95)
+    out = graft_row(hy, st, go)
+    assert out["adjudication"] == "APPROVED"
+    assert out["confidence"] == 0.95
+
+
+def test_gole_low_conf_no_promote():
+    hy = _row("NEEDS_REVIEW", 0.4)
+    st = _row("NEEDS_REVIEW", 0.3)
+    go = _row("APPROVED", 0.85)
+    out = graft_row(hy, st, go)
+    assert out["adjudication"] == "NEEDS_REVIEW"

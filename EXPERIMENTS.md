@@ -14,14 +14,17 @@ Record of measured configs. No claim without a receipt.
 | E7 | Always demote Strobl DENIED | Ignore conf when S=DENIED; keep 0.913 for REVIEW | full train 1k frontier artifacts | **136.07** (no-op) | **0** | 0 cases H=APPROVED+S=DENIED+conf&gt;0.913 | **SHIP** (private insurance) |
 | E8 | **Promote Strobl APPROVED ≥0.90** | H=NEEDS_REVIEW & S=APPROVED & S.conf≥0.90 → S | full train 1k champion+Strobl | **136.71** | **0** | +0.64 class; 12 true A / 2 true R; 0 CFA | **SHIP** |
 | E9 | Promote + clean risk_flags gate | Same + empty flags | full train 1k | no-op | 0 | Gate kills all promotes | Reject |
-| E10 | AK / purpose×sig unlock | rival-style | full train 1k | vanity ↑ | 0* | Private drop / polarity refuse | **Refuse** |
+| E10 | Blind Strobl field overwrite | Replace all scored fields from Strobl | full train 1k | 136.17 | 0 | Fields drop | Reject |
+| E11 | **Gole fields + dual-DENIED + Gole≥0.90** | Third clerk MIT; CFA-safe class gates | full train 1k ship+Gole | **137.30** | **0** | Beats bmdhodl 137.23; no Engine B | **SHIP** |
+| E12 | Gole promote ≥0.85 ungated | Lower floor | full train 1k | ~136.5 | 3 | CFA bomb | Reject |
+| E13 | AK / purpose×sig unlock | rival-style | full train 1k | vanity ↑ | 0* | Private drop / polarity refuse | **Refuse** |
 
 ## Frontier rule
 
-Sweep confidence×disagree demotions; pick lowest cut with **CFA = 0** that maximizes total. Locked at **0.913**. Promote floor locked at **0.90** (CFA=0 on train; recovers class without fitting Engine B).
+Demote cut **0.913**, Strobl promote **0.90**, Gole promote **0.90** + dual-DENIED.
+All CFA=0 on full public 1k.
 
 ## Next actions (local only)
 
-1. Regen 5k val preds + update PR #32 tip.
-2. Docker smoke of dual graft under contest limits.
-3. Do not chase #91 stack / #73 CatBoost Engine B / AK titles.
+1. Docker smoke under contest 4 vCPU / 6 s/PDF (Moonshots∥Gole + Strobl).
+2. Do not chase #91 learned referee / #73 CatBoost Engine B / AK titles.

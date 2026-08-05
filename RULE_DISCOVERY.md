@@ -14,6 +14,8 @@ deterministic clerks already vendored from Moonshots and Strobl.
   `NEEDS_REVIEW` overrides only when confidence ≤ 0.913.
 - Graft promote: Strobl `APPROVED` with confidence ≥ 0.90 overrides hybrid
   `NEEDS_REVIEW` (train-measured CFA=0; recovers class without Engine B).
+- Gole third clerk: nonempty scored fields; dual Strobl+Gole `DENIED` demote;
+  Gole `APPROVED` ≥ 0.90 promote. Locked train **137.30 / CFA=0**.
 
 ## Explicitly refused
 
@@ -24,9 +26,10 @@ deterministic clerks already vendored from Moonshots and Strobl.
 | Case-ID / filename / hash tables | Anti-cheat / non-transfer |
 | Blind NR→APPROVED mass unlock | Measured CFA bombs |
 | #91 stack referee / #73 CatBoost Engine B | 1k-fit private risk |
+| Gole promote ≥0.85 ungated | CFA=3 on train |
 
 ## Discovery method
 
 Train residuals + confidence×disagree frontier (not association mining into
-approve laundry). Supporting receipt: locked evaluate on graft+promote preds →
-136.71 / CFA=0.
+approve laundry). Supporting receipt: locked evaluate on triple-clerk graft →
+137.30 / CFA=0.

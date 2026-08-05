@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Offline two-argument runtime: Moonshots fields + Strobl graft.
+"""Offline two-argument runtime: Moonshots + Strobl + Gole graft.
 
 1) Moonshots OCR/decision → base rows
 2) Strobl mib_pipeline → strobl rows
-3) VisibleScoreFinalizer on Moonshots rows → hybrid
-4) Graft: demote always on Strobl DENIED; demote mid/low-conf (≤0.913) on
-   Strobl NEEDS_REVIEW; promote hybrid NEEDS_REVIEW → APPROVED when Strobl
-   APPROVED conf ≥ 0.90
+3) thegoleffect clerk → gole rows (fields + second/third opinion)
+4) VisibleScoreFinalizer on Moonshots rows → hybrid
+5) Graft: Strobl demote/promote + Gole field take + dual-DENIED + Gole promote
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Sequence
 
@@ -35,7 +35,12 @@ from mib_pipeline import (
     ReviewDenialRecoveryAdjudicator,
     VisibleEvidenceExtractor,
 )
-from mib_pipeline.graft import APPROVE_CONF_MAX, PROMOTE_CONF_MIN, graft_row
+from mib_pipeline.graft import (
+    APPROVE_CONF_MAX,
+    GOLE_PROMOTE_MIN,
+    PROMOTE_CONF_MIN,
+    graft_row,
+)
 from mib_pipeline.models import PredictionRow
 from mib_pipeline.score_finalizer import VisibleScoreFinalizer
 
@@ -43,6 +48,7 @@ from mib_pipeline.score_finalizer import VisibleScoreFinalizer
 USAGE = "usage: solution.py <input_pdf_dir> <output_predictions_path>"
 MAX_WORKERS = 4
 ROOT = Path(__file__).resolve().parent
+GOLE_SOLUTION = ROOT / "clerks" / "goleffect" / "solution.py"
 
 
 class ContractError(ValueError):
@@ -149,6 +155,23 @@ def _run_strobl(input_dir: Path, out_path: Path) -> None:
     runner.run(input_dir, out_path)
 
 
+def _run_gole(input_dir: Path, out_path: Path) -> None:
+    if not GOLE_SOLUTION.is_file():
+        raise ContractError(f"goleffect clerk missing: {GOLE_SOLUTION}")
+    env = os.environ.copy()
+    env.setdefault("OMP_NUM_THREADS", "1")
+    py = os.environ.get("MIB_GOLE_PYTHON", sys.executable)
+    proc = subprocess.run(
+        [py, "-B", str(GOLE_SOLUTION), str(input_dir), str(out_path)],
+        env=env,
+        cwd=str(GOLE_SOLUTION.parent),
+    )
+    if proc.returncode != 0:
+        raise ContractError(f"goleffect clerk failed with exit {proc.returncode}")
+    if not out_path.is_file():
+        raise ContractError("goleffect clerk produced no output file")
+
+
 def _pdf_index(input_dir: Path) -> dict[str, Path]:
     index: dict[str, Path] = {}
     for path in sorted(input_dir.glob("*.pdf")):
@@ -166,27 +189,49 @@ def main(argv: Sequence[str] | None = None) -> int:
         promote_min = float(
             os.environ.get("MIB_GRAFT_PROMOTE_CONF_MIN", str(PROMOTE_CONF_MIN))
         )
+        gole_promote_min = float(
+            os.environ.get("MIB_GOLE_PROMOTE_CONF_MIN", str(GOLE_PROMOTE_MIN))
+        )
         with tempfile.TemporaryDirectory(prefix="mib-graft-") as tmp:
             tmp_dir = Path(tmp)
             ms_path = tmp_dir / "moonshots.jsonl"
             st_path = tmp_dir / "strobl.jsonl"
-            print("graft: running moonshots…", file=sys.stderr)
-            _run_moonshots(input_dir, ms_path)
-            print("graft: running strobl…", file=sys.stderr)
-            _run_strobl(input_dir, st_path)
+            go_path = tmp_dir / "gole.jsonl"
+
+            print("graft: running moonshots + goleffect (+ strobl)…", file=sys.stderr)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                ms_fut = pool.submit(_run_moonshots, input_dir, ms_path)
+                go_fut = pool.submit(_run_gole, input_dir, go_path)
+                _run_strobl(input_dir, st_path)
+                ms_fut.result()
+                go_fut.result()
+
             ms_by = _load_jsonl(ms_path)
             st_by = _load_jsonl(st_path)
+            go_by = _load_jsonl(go_path)
             pdfs = _pdf_index(input_dir)
             finalizer = VisibleScoreFinalizer()
             demoted = 0
             promoted = 0
             with output_path.open("w") as handle:
-                for case_id in sorted(set(ms_by) | set(st_by) | set(pdfs)):
+                for case_id in sorted(set(ms_by) | set(st_by) | set(go_by) | set(pdfs)):
                     ms = ms_by.get(case_id)
                     st = st_by.get(case_id)
+                    go = go_by.get(case_id)
                     pdf = pdfs.get(case_id)
                     if ms is None and st is not None:
                         row = {k: st.get(k) for k in st}
+                        if go is not None:
+                            row = graft_row(
+                                row,
+                                st,
+                                go,
+                                conf_max=conf_max,
+                                promote_conf_min=promote_min,
+                                gole_promote_min=gole_promote_min,
+                            )
+                    elif ms is None and go is not None:
+                        row = {k: go.get(k) for k in go}
                     elif ms is None:
                         continue
                     else:
@@ -201,13 +246,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                             hybrid = base.to_dict()
                         if st is None:
                             row = hybrid
+                            if go is not None:
+                                row = graft_row(
+                                    hybrid,
+                                    hybrid,
+                                    go,
+                                    conf_max=-1.0,
+                                    always_demote_denied=False,
+                                    allow_promote=False,
+                                    allow_dual_denied=False,
+                                    gole_promote_min=gole_promote_min,
+                                )
                         else:
                             before = hybrid.get("adjudication")
                             row = graft_row(
                                 hybrid,
                                 st,
+                                go,
                                 conf_max=conf_max,
                                 promote_conf_min=promote_min,
+                                gole_promote_min=gole_promote_min,
                             )
                             after = row.get("adjudication")
                             if before == "APPROVED" and after != "APPROVED":
@@ -217,7 +275,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     handle.write(json.dumps(row, ensure_ascii=True) + "\n")
             print(
                 f"graft: wrote {output_path} demoted={demoted} promoted={promoted} "
-                f"conf_max={conf_max} promote_min={promote_min}",
+                f"conf_max={conf_max} promote_min={promote_min} "
+                f"gole_promote_min={gole_promote_min}",
                 file=sys.stderr,
             )
     except (CalibrationArtifactError, ContractError, OSError, PolicyArtifactError) as exc:
