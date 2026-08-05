@@ -2,7 +2,7 @@
 
 ## Solution
 - Repo: https://github.com/arjunkshah12345-hash/mib-doc-solution
-- Tip: Moonshots + Strobl + thegoleffect **private seatbelt** graft
+- Tip: `479ecd3` — Moonshots + Strobl + thegoleffect **private seatbelt** graft
 - Runtime: `run.sh` → `solution.py` (triple clerk; Gole fee-only + Strobl-DENIED veto)
 
 ## Public train (official evaluate.py)
