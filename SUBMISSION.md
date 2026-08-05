@@ -2,7 +2,7 @@
 
 ## Solution
 - Repo: https://github.com/arjunkshah12345-hash/mib-doc-solution
-- Tip: Moonshots/tyler OCR + Strobl graft (demote ≤0.913 + promote ≥0.90)
+- Tip: `38cbfcc` — Moonshots/tyler OCR + Strobl graft (demote ≤0.913 + promote ≥0.90)
 - Runtime: `run.sh` → `solution.py` (dual pipeline)
 
 ## Public train (official evaluate.py)
