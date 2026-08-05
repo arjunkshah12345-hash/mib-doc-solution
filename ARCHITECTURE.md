@@ -10,9 +10,9 @@ PDF dir
   ├─► thegoleffect clerk (clerks/goleffect/)               ⎦
   ├─► Strobl mib_pipeline (in-process)
   ├─► VisibleScoreFinalizer(Moonshots rows) → hybrid
-  └─► graft_row(hybrid, strobl, gole)
+  └─► graft_row(hybrid, strobl, gole)  [private seatbelt]
         Strobl demote DENIED / REVIEW≤0.913; Strobl promote ≥0.90
-        Gole scored fields; dual-DENIED; Gole promote ≥0.90
+        Gole fee_status only; dual-DENIED; Gole promote ≥0.90 iff Strobl ≠ DENIED
 ```
 
 ## Security boundary
@@ -20,8 +20,7 @@ PDF dir
 - Visible rendered pages are trusted; planted white/`SYSTEM:` answer-key text is not used as a decision channel.
 - No case-ID / filename / hash lookup tables.
 - No LLM/VLM/cloud OCR/network at inference.
-- Graft demotes on Strobl DENIED/REVIEW disagreement; promotes only under locked
-  Strobl/Gole high-conf floors; Gole fields are attributed MIT extraction.
+- Never Gole-promote over Strobl DENIED; no blind full-field Gole overwrite.
 
 ## Modules
 
@@ -36,5 +35,5 @@ PDF dir
 
 ## Locked public-train claim
 
-Official `evaluate.py`: **137.30 / 150**, **CFA = 0**  
-(field 45.66 / class 73.68 / cal 17.96).
+Official `evaluate.py`: **137.23 / 150**, **CFA = 0**  
+(field 45.66 / class 73.62 / cal 17.95).

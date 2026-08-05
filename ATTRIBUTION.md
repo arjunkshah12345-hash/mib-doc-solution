@@ -27,16 +27,17 @@ file.
 
 `clerks/goleffect/solution.py` is vendored under MIT from
 [`thegoleffect/mib-doc-challenge-solution`](https://github.com/thegoleffect/mib-doc-challenge-solution).
-Used for scored-field candidates plus CFA-safe dual-DENIED / high-conf
-promote gates — never as a copied validation prediction file.
+Used for `fee_status` candidates plus CFA-safe dual-DENIED / high-conf
+promote gates with a Strobl-DENIED veto — never as a copied validation
+prediction file, never as a blind full-field overwrite.
 
 ## Local private-transfer delta (arjunkshah12345-hash)
 
-Triple-pipeline graft (`solution.py` + `mib_pipeline/graft.py`):
+Triple-pipeline private-seatbelt graft (`solution.py` + `mib_pipeline/graft.py`):
 
 - Moonshots/tyler OCR for fields + base adjudication
-- Strobl as disagreeing second clerk (demote ≤0.913 / promote ≥0.90)
-- Gole fields + dual-DENIED + Gole promote ≥0.90
+- Strobl demote ≤0.913 / promote ≥0.90
+- Gole `fee_status` only + dual-DENIED + Gole promote ≥0.90 iff Strobl ≠ DENIED
 - No answer-key channel; no case-ID lists
 
 No other participant's validation prediction file was copied. Predictions for
