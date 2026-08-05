@@ -4,7 +4,9 @@
 1) Moonshots OCR/decision → base rows
 2) Strobl mib_pipeline → strobl rows
 3) VisibleScoreFinalizer on Moonshots rows → hybrid
-4) Graft demote (H=0.913): keep hybrid unless Strobl disagrees on mid/low-conf APPROVED
+4) Graft: demote always on Strobl DENIED; demote mid/low-conf (≤0.913) on
+   Strobl NEEDS_REVIEW; promote hybrid NEEDS_REVIEW → APPROVED when Strobl
+   APPROVED conf ≥ 0.90
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from mib_pipeline import (
     ReviewDenialRecoveryAdjudicator,
     VisibleEvidenceExtractor,
 )
-from mib_pipeline.graft import APPROVE_CONF_MAX, graft_row
+from mib_pipeline.graft import APPROVE_CONF_MAX, PROMOTE_CONF_MIN, graft_row
 from mib_pipeline.models import PredictionRow
 from mib_pipeline.score_finalizer import VisibleScoreFinalizer
 
@@ -161,6 +163,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         input_dir, output_path = parse_paths(arguments)
         conf_max = float(os.environ.get("MIB_GRAFT_CONF_MAX", str(APPROVE_CONF_MAX)))
+        promote_min = float(
+            os.environ.get("MIB_GRAFT_PROMOTE_CONF_MIN", str(PROMOTE_CONF_MIN))
+        )
         with tempfile.TemporaryDirectory(prefix="mib-graft-") as tmp:
             tmp_dir = Path(tmp)
             ms_path = tmp_dir / "moonshots.jsonl"
@@ -174,6 +179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             pdfs = _pdf_index(input_dir)
             finalizer = VisibleScoreFinalizer()
             demoted = 0
+            promoted = 0
             with output_path.open("w") as handle:
                 for case_id in sorted(set(ms_by) | set(st_by) | set(pdfs)):
                     ms = ms_by.get(case_id)
@@ -197,12 +203,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                             row = hybrid
                         else:
                             before = hybrid.get("adjudication")
-                            row = graft_row(hybrid, st, conf_max=conf_max)
-                            if row.get("adjudication") != before:
+                            row = graft_row(
+                                hybrid,
+                                st,
+                                conf_max=conf_max,
+                                promote_conf_min=promote_min,
+                            )
+                            after = row.get("adjudication")
+                            if before == "APPROVED" and after != "APPROVED":
                                 demoted += 1
+                            elif before == "NEEDS_REVIEW" and after == "APPROVED":
+                                promoted += 1
                     handle.write(json.dumps(row, ensure_ascii=True) + "\n")
             print(
-                f"graft: wrote {output_path} demoted={demoted} conf_max={conf_max}",
+                f"graft: wrote {output_path} demoted={demoted} promoted={promoted} "
+                f"conf_max={conf_max} promote_min={promote_min}",
                 file=sys.stderr,
             )
     except (CalibrationArtifactError, ContractError, OSError, PolicyArtifactError) as exc:
