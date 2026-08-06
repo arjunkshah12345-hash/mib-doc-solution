@@ -128,3 +128,22 @@ def test_never_gole_promote_over_strobl_denied():
     go = _row("APPROVED", 0.995)
     out = graft_row(hy, st, go)
     assert out["adjudication"] == "NEEDS_REVIEW"
+
+
+def test_gole_denied_vetoes_approve_when_strobl_not_approved():
+    """Fail-closed: high-conf Gole DENIED + Strobl not APPROVED → demote."""
+    hy = _row("APPROVED", 0.95)  # above 0.913 review demote cut
+    st = _row("NEEDS_REVIEW", 0.22)
+    go = _row("DENIED", 0.98)
+    out = graft_row(hy, st, go)
+    assert out["adjudication"] == "NEEDS_REVIEW"
+    assert out["confidence"] == 0.22
+
+
+def test_gole_denied_does_not_override_strobl_approved():
+    """Two-clerk approve agreement stands even if Gole DENIED."""
+    hy = _row("APPROVED", 0.95)
+    st = _row("APPROVED", 0.98)
+    go = _row("DENIED", 0.98)
+    out = graft_row(hy, st, go)
+    assert out["adjudication"] == "APPROVED"

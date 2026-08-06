@@ -10,6 +10,8 @@ Private seatbelt rules (fail-closed):
 5. Dual-DENIED: still NEEDS_REVIEW + Strobl DENIED + Gole DENIED → DENIED.
 6. Gole promote: still NEEDS_REVIEW + Gole APPROVED ≥ 0.90 + Strobl is NOT
    DENIED → APPROVED. Never promote over a Strobl DENIED (CFA hole closed).
+7. Gole DENIED veto: still APPROVED + Gole DENIED ≥ 0.90 + Strobl is NOT
+   APPROVED → take Strobl. Symmetric fail-closed seatbelt; 0 train flips.
 
 Locked train: **137.23 / 150, CFA = 0**.
 """
@@ -144,6 +146,20 @@ def graft_row(
     ):
         out["adjudication"] = "APPROVED"
         out["confidence"] = go_conf
+        cur = "APPROVED"
+
+    # Private seatbelt: don't keep APPROVED when Gole high-conf DENIED and
+    # Strobl did not approve (two-clerk disagreement → fail closed).
+    if (
+        cur == "APPROVED"
+        and go_adj == "DENIED"
+        and st_adj != "APPROVED"
+        and go_conf >= gole_promote_min
+    ):
+        out["adjudication"] = (
+            st_adj if st_adj in {"DENIED", "NEEDS_REVIEW"} else "NEEDS_REVIEW"
+        )
+        out["confidence"] = st_conf if st_conf > 0 else min(_conf(out), 0.55)
 
     return out
 
